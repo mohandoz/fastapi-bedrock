@@ -1,0 +1,10 @@
+Async Alembic migrations for {{ cookiecutter.project_name }}.
+
+Create a new revision after changing models:
+    make revision m="describe your change"
+
+Apply migrations:
+    make migrate
+
+Roll back the most recent migration:
+    make downgrade

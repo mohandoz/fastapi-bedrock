@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Environments / tooling caches
+.venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# uv
+uv.lock
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Rendered output produced while testing the template
+/output/

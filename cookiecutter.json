@@ -1,0 +1,17 @@
+{
+    "project_name": "FastAPI DDD Service",
+    "project_slug": "{{ cookiecutter.project_name | lower | trim | replace(' ', '-') | replace('_', '-') }}",
+    "package_name": "{{ cookiecutter.project_slug | lower | replace('-', '_') }}",
+    "project_description": "A production-ready FastAPI service using a Domain-Driven Design layout.",
+    "author_name": "Your Name",
+    "author_email": "you@example.com",
+    "version": "0.1.0",
+    "python_version": "3.13",
+    "first_entity": "item",
+    "use_auth": ["yes", "no"],
+    "use_docker": ["yes", "no"],
+    "use_github_actions": ["yes", "no"],
+    "use_rate_limiting": ["yes", "no"],
+    "use_sentry": ["no", "yes"],
+    "_copy_without_render": [".github/workflows/ci.yml", "*.mako"]
+}
