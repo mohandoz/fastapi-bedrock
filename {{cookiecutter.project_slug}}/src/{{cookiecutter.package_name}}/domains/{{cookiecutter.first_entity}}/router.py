@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Annotated
 from uuid import UUID
 
@@ -11,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from {{ cookiecutter.package_name }}.core.database import get_session
+from {{ cookiecutter.package_name }}.core.schemas import Page
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth.dependencies import get_current_active_user
 {%- endif %}
@@ -41,12 +41,12 @@ router = APIRouter(
 )
 
 
-@router.get("", response_model=list[{{ entity_class }}Read])
+@router.get("", response_model=Page[{{ entity_class }}Read])
 async def list_{{ cookiecutter.first_entity }}s(
     service: ServiceDep,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> Sequence[{{ entity_class }}]:
+) -> Page[{{ entity_class }}]:
     return await service.list(offset=offset, limit=limit)
 
 

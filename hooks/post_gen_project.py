@@ -20,6 +20,10 @@ USE_DOCKER = "{{ cookiecutter.use_docker }}" == "yes"
 USE_CI = "{{ cookiecutter.use_github_actions }}" == "yes"
 USE_RATE_LIMITING = "{{ cookiecutter.use_rate_limiting }}" == "yes"
 USE_SENTRY = "{{ cookiecutter.use_sentry }}" == "yes"
+USE_TEMPORAL = "{{ cookiecutter.use_temporal }}" == "yes"
+USE_REDIS = "{{ cookiecutter.use_redis }}" == "yes"
+USE_OBSERVABILITY = "{{ cookiecutter.use_observability }}" == "yes"
+USE_HTTP_CLIENT = "{{ cookiecutter.use_http_client }}" == "yes"
 
 
 def remove(*relative_paths: str | Path) -> None:
@@ -50,6 +54,14 @@ def prune_disabled_features() -> None:
         remove(SRC / "core" / "rate_limit.py")
     if not USE_SENTRY:
         remove(SRC / "core" / "sentry.py")
+    if not USE_TEMPORAL:
+        remove(SRC / "temporal", "tests/test_temporal.py", "dynamicconfig")
+    if not USE_REDIS:
+        remove(SRC / "core" / "redis.py", SRC / "core" / "cache.py", SRC / "events", "tests/test_redis.py")
+    if not USE_OBSERVABILITY:
+        remove(SRC / "core" / "observability.py")
+    if not USE_HTTP_CLIENT:
+        remove(SRC / "core" / "http.py", "tests/test_http.py")
 
 
 def sync_dependencies() -> None:
@@ -70,7 +82,7 @@ def sync_dependencies() -> None:
 def initial_commit() -> None:
     run("git", "add", "-A")
     # Non-fatal: if git has no configured identity the files simply stay staged.
-    run("git", "commit", "-q", "-m", "Initial commit from fastapi-ddd-cookiecutter")
+    run("git", "commit", "-q", "-m", "Initial commit from fastapi-bedrock")
 
 
 def main() -> None:

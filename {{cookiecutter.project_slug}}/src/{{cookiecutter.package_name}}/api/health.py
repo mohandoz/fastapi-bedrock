@@ -9,16 +9,36 @@ from sqlalchemy import text
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from {{ cookiecutter.package_name }}.core.database import get_session
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+from {{ cookiecutter.package_name }}.core.rate_limit import limiter
+{%- endif %}
+{%- if cookiecutter.use_redis == "yes" %}
+from {{ cookiecutter.package_name }}.core.redis import RedisClient
+{%- endif %}
 
 router = APIRouter(tags=["health"])
 
 
 @router.get("/health", summary="Liveness probe")
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+@limiter.exempt
+{%- endif %}
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @router.get("/ready", summary="Readiness probe (verifies the database)")
-async def ready(session: Annotated[AsyncSession, Depends(get_session)]) -> dict[str, str]:
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+@limiter.exempt
+{%- endif %}
+async def ready(
+    session: Annotated[AsyncSession, Depends(get_session)],
+{%- if cookiecutter.use_redis == "yes" %}
+    redis_client: RedisClient,
+{%- endif %}
+) -> dict[str, str]:
     await session.execute(text("SELECT 1"))
+{%- if cookiecutter.use_redis == "yes" %}
+    await redis_client.ping()
+{%- endif %}
     return {"status": "ready"}

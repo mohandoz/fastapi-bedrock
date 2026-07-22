@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from uuid import UUID
 
 from {{ cookiecutter.package_name }}.core.exceptions import NotFoundError
+from {{ cookiecutter.package_name }}.core.schemas import Page
 from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }}.models import {{ entity_class }}
 from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }}.repository import {{ entity_class }}Repository
 from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }}.schemas import (
@@ -27,8 +27,10 @@ class {{ entity_class }}Service:
             raise NotFoundError(f"{{ entity_class }} {entity_id} not found")
         return obj
 
-    async def list(self, *, offset: int = 0, limit: int = 100) -> Sequence[{{ entity_class }}]:
-        return await self.repository.list(offset=offset, limit=limit)
+    async def list(self, *, offset: int = 0, limit: int = 100) -> Page[{{ entity_class }}]:
+        items = await self.repository.list(offset=offset, limit=limit)
+        total = await self.repository.count()
+        return Page(items=list(items), total=total, offset=offset, limit=limit)
 
     async def create(self, data: {{ entity_class }}Create) -> {{ entity_class }}:
         return await self.repository.add({{ entity_class }}(**data.model_dump()))

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import structlog
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
+
+logger = structlog.get_logger(__name__)
 
 
 class AppError(Exception):
@@ -50,4 +53,13 @@ def add_exception_handlers(app: FastAPI) -> None:
             status_code=exc.status_code,
             content={"detail": exc.detail},
             headers=headers,
+        )
+
+    @app.exception_handler(Exception)
+    async def _handle_unexpected_error(_request: Request, _exc: Exception) -> JSONResponse:
+        # Logged through structlog (with the bound request id), never leaked to the client.
+        logger.exception("unhandled_error")
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "Internal server error"},
         )

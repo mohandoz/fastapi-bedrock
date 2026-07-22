@@ -14,6 +14,10 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.db_echo,
     pool_pre_ping=True,
+    pool_size=settings.db_pool_size,
+    max_overflow=settings.db_max_overflow,
+    pool_timeout=settings.db_pool_timeout,
+    pool_recycle=settings.db_pool_recycle,
 )
 
 async_session_factory = async_sessionmaker(
@@ -40,6 +44,9 @@ def _import_models() -> None:
     from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }} import models  # noqa: F401
 {%- if cookiecutter.use_auth == "yes" %}
     from {{ cookiecutter.package_name }}.domains.auth import models as auth_models  # noqa: F401
+{%- endif %}
+{%- if cookiecutter.use_redis == "yes" %}
+    from {{ cookiecutter.package_name }}.events import models as event_models  # noqa: F401
 {%- endif %}
 
 

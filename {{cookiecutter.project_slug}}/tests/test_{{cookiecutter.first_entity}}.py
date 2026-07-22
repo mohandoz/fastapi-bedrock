@@ -31,7 +31,9 @@ async def test_list(client: AsyncClient, auth_headers: dict[str, str]) -> None:
         await client.post(BASE, json=payload, headers=auth_headers)
     response = await client.get(BASE, headers=auth_headers)
     assert response.status_code == 200
-    assert len(response.json()) >= 3
+    body = response.json()
+    assert body["total"] >= 3
+    assert len(body["items"]) >= 3
 
 
 async def test_update(client: AsyncClient, auth_headers: dict[str, str]) -> None:

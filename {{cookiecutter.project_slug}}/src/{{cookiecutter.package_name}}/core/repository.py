@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -30,6 +31,10 @@ class BaseRepository[ModelT: SQLModel]:
     async def list(self, *, offset: int = 0, limit: int = 100) -> Sequence[ModelT]:
         result = await self.session.exec(select(self.model).offset(offset).limit(limit))
         return result.all()
+
+    async def count(self) -> int:
+        result = await self.session.exec(select(func.count()).select_from(self.model))
+        return result.one()
 
     async def add(self, instance: ModelT) -> ModelT:
         self.session.add(instance)

@@ -1,0 +1,8 @@
+# Dynamic config for the local Temporal dev server (from temporalio/docker-compose).
+# Mounted at /etc/temporal/config/dynamicconfig/development-sql.yaml.
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true # Dev only. Do not enable in production.
+    constraints: {}

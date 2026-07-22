@@ -17,6 +17,9 @@ from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }} imp
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth import models as auth_models  # noqa: F401
 {%- endif %}
+{%- if cookiecutter.use_redis == "yes" %}
+from {{ cookiecutter.package_name }}.events import models as event_models  # noqa: F401
+{%- endif %}
 
 config = context.config
 if config.config_file_name is not None:

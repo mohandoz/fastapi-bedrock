@@ -33,7 +33,11 @@ async def get_current_user(
     subject = payload.get("sub")
     if subject is None:
         raise UnauthorizedError("Could not validate credentials")
-    user = await UserRepository(session).get(UUID(subject))
+    try:
+        user_id = UUID(subject)
+    except ValueError as exc:
+        raise UnauthorizedError("Could not validate credentials") from exc
+    user = await UserRepository(session).get(user_id)
     if user is None:
         raise UnauthorizedError("User not found")
     return user

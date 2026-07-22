@@ -10,9 +10,31 @@ services:
 {%- if cookiecutter.use_auth == "yes" %}
       SECRET_KEY: local-development-secret-change-me
 {%- endif %}
+{%- if cookiecutter.use_redis == "yes" %}
+      REDIS_URL: redis://redis:6379/0
+{%- endif %}
+{%- if cookiecutter.use_temporal == "yes" %}
+      TEMPORAL_HOST: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: {{ cookiecutter.package_name }}-tq
+{%- endif %}
+{%- if cookiecutter.use_observability == "yes" %}
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: {{ cookiecutter.package_name }}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+{%- endif %}
     depends_on:
       db:
         condition: service_healthy
+{%- if cookiecutter.use_redis == "yes" %}
+      redis:
+        condition: service_healthy
+{%- endif %}
+{%- if cookiecutter.use_observability == "yes" %}
+      otel-lgtm:
+        condition: service_started
+{%- endif %}
     command: >
       sh -c "alembic upgrade head &&
       fastapi run src/{{ cookiecutter.package_name }}/main.py --host 0.0.0.0 --port 8000"
@@ -32,6 +54,103 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+{%- if cookiecutter.use_redis == "yes" %}
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Streams consumer: same image as the API, runs the events worker loop.
+  events-worker:
+    build: .
+    environment:
+      ENVIRONMENT: local
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{{ cookiecutter.package_name }}
+      REDIS_URL: redis://redis:6379/0
+    command: python -m {{ cookiecutter.package_name }}.events.worker
+    restart: on-failure
+    depends_on:
+      redis:
+        condition: service_healthy
+{%- endif %}
+{%- if cookiecutter.use_observability == "yes" %}
+
+  # All-in-one OpenTelemetry backend: OTel Collector + Loki + Tempo + Prometheus
+  # + Grafana. Datasources are pre-provisioned; OTLP logs -> Loki, traces ->
+  # Tempo, metrics -> Prometheus. Dev/test only. Grafana: http://localhost:3000
+  # (admin / admin).
+  otel-lgtm:
+    image: grafana/otel-lgtm:0.29.1
+    ports:
+      - "3000:3000" # Grafana UI
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+    volumes:
+      - otel-lgtm-data:/data
+{%- endif %}
+{%- if cookiecutter.use_temporal == "yes" %}
+
+  # Temporal worker: same image as the API, different command.
+  worker:
+    build: .
+    environment:
+      ENVIRONMENT: local
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{{ cookiecutter.package_name }}
+      TEMPORAL_HOST: temporal:7233
+      TEMPORAL_NAMESPACE: default
+      TEMPORAL_TASK_QUEUE: {{ cookiecutter.package_name }}-tq
+    command: python -m {{ cookiecutter.package_name }}.temporal.worker
+    restart: on-failure # retries until the Temporal frontend is ready
+    depends_on:
+      temporal:
+        condition: service_started
+
+  # Temporal server (all-in-one, dev only). Reuses the app's Postgres and
+  # creates its own `temporal` / `temporal_visibility` databases on first boot.
+  temporal:
+    image: temporalio/auto-setup:1.29.1
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB: postgres12 # schema plugin for Postgres 12+ (works with PG17)
+      DB_PORT: "5432" # auto-setup default is 3306 — must override
+      POSTGRES_SEEDS: db
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: postgres
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    volumes:
+      - ./dynamicconfig:/etc/temporal/config/dynamicconfig
+    ports:
+      - "7233:7233"
+
+  temporal-ui:
+    image: temporalio/ui:2.34.0
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8080:8080" # Web UI at http://localhost:8080
+{%- endif %}
 
 volumes:
   pgdata:
+{%- if cookiecutter.use_redis == "yes" %}
+  redisdata:
+{%- endif %}
+{%- if cookiecutter.use_observability == "yes" %}
+  otel-lgtm-data:
+{%- endif %}

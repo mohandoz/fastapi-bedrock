@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 4 44 57" role="img" aria-label="fastapi-bedrock">
+  <rect x="12" y="52" width="40" height="7" rx="2.5" fill="#46555f"/>
+  <rect x="17" y="46" width="30" height="6" rx="2" fill="#63727d"/>
+  <circle cx="32" cy="27" r="21" fill="#009485"/>
+  <path d="M34 10 L21 30 h9 l-3 14 L44 25 h-10 l5 -15 z" fill="#ffffff"/>
+</svg>

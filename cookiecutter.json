@@ -13,5 +13,9 @@
     "use_github_actions": ["yes", "no"],
     "use_rate_limiting": ["yes", "no"],
     "use_sentry": ["no", "yes"],
+    "use_temporal": ["no", "yes"],
+    "use_redis": ["no", "yes"],
+    "use_observability": ["no", "yes"],
+    "use_http_client": ["no", "yes"],
     "_copy_without_render": [".github/workflows/ci.yml", "*.mako"]
 }
