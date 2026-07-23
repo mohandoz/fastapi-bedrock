@@ -4,11 +4,19 @@ from __future__ import annotations
 
 from typing import Annotated
 
+{% if cookiecutter.use_rate_limiting == "yes" -%}
+from fastapi import APIRouter, Depends, Request, status
+{%- else -%}
 from fastapi import APIRouter, Depends, status
+{%- endif %}
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from {{ cookiecutter.package_name }}.core.database import get_session
+from {{ cookiecutter.package_name }}.core.config import settings
+from {{ cookiecutter.package_name }}.core.database import SessionDep
+from {{ cookiecutter.package_name }}.core.exceptions import ForbiddenError
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+from {{ cookiecutter.package_name }}.core.rate_limit import limiter
+{%- endif %}
 from {{ cookiecutter.package_name }}.domains.auth.dependencies import CurrentUser
 from {{ cookiecutter.package_name }}.domains.auth.models import User
 from {{ cookiecutter.package_name }}.domains.auth.repository import UserRepository
@@ -21,7 +29,7 @@ from {{ cookiecutter.package_name }}.domains.auth.schemas import (
 from {{ cookiecutter.package_name }}.domains.auth.service import AuthService
 
 
-def get_auth_service(session: Annotated[AsyncSession, Depends(get_session)]) -> AuthService:
+def get_auth_service(session: SessionDep) -> AuthService:
     return AuthService(UserRepository(session))
 
 
@@ -31,7 +39,15 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+# Stricter than the global default: registration is unauthenticated and abusable.
+@limiter.limit("5/minute")
+async def register(request: Request, data: UserCreate, service: ServiceDep) -> User:
+{%- else %}
 async def register(data: UserCreate, service: ServiceDep) -> User:
+{%- endif %}
+    if not settings.open_registration:
+        raise ForbiddenError("Registration is disabled")
     return await service.register(data)
 
 

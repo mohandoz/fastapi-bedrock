@@ -15,6 +15,7 @@ from {{ cookiecutter.package_name }}.core.security import (
     decode_token,
     hash_password,
     verify_password,
+    verify_password_dummy,
 )
 from {{ cookiecutter.package_name }}.domains.auth.models import User
 from {{ cookiecutter.package_name }}.domains.auth.repository import UserRepository
@@ -26,19 +27,24 @@ class AuthService:
         self.repository = repository
 
     async def register(self, data: UserCreate) -> User:
-        if await self.repository.get_by_email(data.email) is not None:
+        # Emails are stored and matched lowercase (EmailStr only lowercases the domain).
+        email = data.email.lower()
+        if await self.repository.get_by_email(email) is not None:
             raise ConflictError("A user with this email already exists")
         # Argon2 hashing is deliberately CPU-bound; keep it off the event loop.
         hashed = await run_in_threadpool(hash_password, data.password)
-        user = User(email=data.email, full_name=data.full_name, hashed_password=hashed)
+        user = User(email=email, full_name=data.full_name, hashed_password=hashed)
         try:
             return await self.repository.add(user)
         except IntegrityError as exc:  # lost a concurrent-registration race
             raise ConflictError("A user with this email already exists") from exc
 
     async def authenticate(self, email: str, password: str) -> User:
-        user = await self.repository.get_by_email(email)
+        user = await self.repository.get_by_email(email.lower())
         if user is None:
+            # Burn an Argon2 verification so unknown and known emails cost the
+            # same time, closing a user-enumeration timing oracle.
+            await run_in_threadpool(verify_password_dummy, password)
             raise UnauthorizedError("Incorrect email or password")
         valid = await run_in_threadpool(verify_password, password, user.hashed_password)
         if not valid:
