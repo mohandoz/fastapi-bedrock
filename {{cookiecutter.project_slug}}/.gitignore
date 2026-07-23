@@ -8,8 +8,9 @@ dist/
 # Virtual environment (uv)
 .venv/
 
-# Environment files & local databases
-.env
+# Environment files & local databases (keep the example tracked)
+.env*
+!.env.example
 *.db
 *.sqlite3
 
@@ -20,6 +21,7 @@ dist/
 .coverage
 coverage.xml
 htmlcov/
+.audit-requirements.txt
 
 # OS / editors
 .DS_Store

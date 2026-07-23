@@ -1,7 +1,8 @@
 default_install_hook_types: [pre-commit]
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    # Keep in step with the ruff version in uv.lock (`pre-commit autoupdate`).
+    rev: v0.15.22
     hooks:
       - id: ruff
         args: [--fix]

@@ -41,7 +41,8 @@ typecheck: ## Run mypy
 check: lint typecheck test ## Run every check (lint, types, tests)
 
 audit: ## Scan locked dependencies for known vulnerabilities
-	uv export --no-emit-project --format requirements-txt | uvx pip-audit -r -
+	uv export --no-emit-project --format requirements-txt -o .audit-requirements.txt
+	uvx pip-audit -r .audit-requirements.txt; status=$$?; rm -f .audit-requirements.txt; exit $$status
 
 precommit: ## Run all pre-commit hooks against every file
 	uv run pre-commit run --all-files
@@ -60,7 +61,7 @@ downgrade: ## Roll back the most recent migration
 	uv run alembic downgrade -1
 
 clean: ## Remove caches and build artefacts
-	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build
+	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build .audit-requirements.txt
 	find . -type d -name __pycache__ -exec rm -rf {} +
 {%- if cookiecutter.use_docker == "yes" %}
 

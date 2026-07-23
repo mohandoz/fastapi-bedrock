@@ -9,14 +9,14 @@ ENV UV_COMPILE_BYTECODE=1 \
 WORKDIR /app
 
 # Install dependencies first for better layer caching.
-COPY pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-install-project --no-dev
+    uv sync --locked --no-install-project --no-dev
 
 # Install the project itself.
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+    uv sync --locked --no-dev
 
 
 FROM python:{{ cookiecutter.python_version }}-slim-bookworm AS runtime
@@ -29,7 +29,9 @@ ENV PATH="/app/.venv/bin:$PATH" \
 RUN groupadd --system app && useradd --system --gid app --home-dir /app app
 
 WORKDIR /app
-COPY --from=builder --chown=app:app /app /app
+# Root-owned and read-only to the runtime user: code and venv cannot be
+# overwritten by a compromised app process.
+COPY --from=builder /app /app
 
 USER app
 EXPOSE 8000
@@ -37,4 +39,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')" || exit 1
 
+# Behind a reverse proxy, set FORWARDED_ALLOW_IPS to the proxy address so
+# {% if cookiecutter.use_rate_limiting == "yes" %}rate limiting and {% endif %}request logs see real client IPs
+# (`fastapi run` already passes uvicorn --proxy-headers).
 CMD ["fastapi", "run", "src/{{ cookiecutter.package_name }}/main.py", "--host", "0.0.0.0", "--port", "8000"]

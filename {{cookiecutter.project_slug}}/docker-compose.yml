@@ -2,10 +2,13 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - path: .env
+        required: false
     environment:
       ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{{ cookiecutter.package_name }}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/{{ cookiecutter.package_name }}
       CORS_ORIGINS: http://localhost:3000
 {%- if cookiecutter.use_auth == "yes" %}
       SECRET_KEY: local-development-secret-change-me
@@ -35,18 +38,21 @@ services:
       otel-lgtm:
         condition: service_started
 {%- endif %}
+    # `exec` makes uvicorn PID 1 so SIGTERM reaches it and shutdown is graceful.
     command: >
       sh -c "alembic upgrade head &&
-      fastapi run src/{{ cookiecutter.package_name }}/main.py --host 0.0.0.0 --port 8000"
+      exec fastapi run src/{{ cookiecutter.package_name }}/main.py --host 0.0.0.0 --port 8000"
 
   db:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # Override via POSTGRES_PASSWORD in .env; compose interpolates it here
+      # and into every DATABASE_URL above so they stay in sync.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: {{ cookiecutter.package_name }}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -60,7 +66,7 @@ services:
     image: redis:8-alpine
     command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:
@@ -72,13 +78,18 @@ services:
   # Redis Streams consumer: same image as the API, runs the events worker loop.
   events-worker:
     build: .
+    env_file:
+      - path: .env
+        required: false
     environment:
       ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{{ cookiecutter.package_name }}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/{{ cookiecutter.package_name }}
       REDIS_URL: redis://redis:6379/0
     command: python -m {{ cookiecutter.package_name }}.events.worker
     restart: on-failure
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
 {%- endif %}
@@ -91,9 +102,9 @@ services:
   otel-lgtm:
     image: grafana/otel-lgtm:0.29.1
     ports:
-      - "3000:3000" # Grafana UI
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
+      - "127.0.0.1:3000:3000" # Grafana UI
+      - "127.0.0.1:4317:4317" # OTLP gRPC
+      - "127.0.0.1:4318:4318" # OTLP HTTP
     volumes:
       - otel-lgtm-data:/data
 {%- endif %}
@@ -102,17 +113,22 @@ services:
   # Temporal worker: same image as the API, different command.
   worker:
     build: .
+    env_file:
+      - path: .env
+        required: false
     environment:
       ENVIRONMENT: local
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{{ cookiecutter.package_name }}
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/{{ cookiecutter.package_name }}
       TEMPORAL_HOST: temporal:7233
       TEMPORAL_NAMESPACE: default
       TEMPORAL_TASK_QUEUE: {{ cookiecutter.package_name }}-tq
     command: python -m {{ cookiecutter.package_name }}.temporal.worker
-    restart: on-failure # retries until the Temporal frontend is ready
+    restart: on-failure
     depends_on:
+      db:
+        condition: service_healthy
       temporal:
-        condition: service_started
+        condition: service_healthy
 
   # Temporal server (all-in-one, dev only). Reuses the app's Postgres and
   # creates its own `temporal` / `temporal_visibility` databases on first boot.
@@ -126,14 +142,19 @@ services:
       DB_PORT: "5432" # auto-setup default is 3306 — must override
       POSTGRES_SEEDS: db
       POSTGRES_USER: postgres
-      POSTGRES_PWD: postgres
+      POSTGRES_PWD: ${POSTGRES_PASSWORD:-postgres}
       DBNAME: temporal
       VISIBILITY_DBNAME: temporal_visibility
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
     volumes:
       - ./dynamicconfig:/etc/temporal/config/dynamicconfig
     ports:
-      - "7233:7233"
+      - "127.0.0.1:7233:7233"
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30 # auto-setup can take ~1 minute on first boot
 
   temporal-ui:
     image: temporalio/ui:2.34.0
@@ -143,7 +164,7 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:3000
     ports:
-      - "8080:8080" # Web UI at http://localhost:8080
+      - "127.0.0.1:8080:8080" # Web UI at http://localhost:8080
 {%- endif %}
 
 volumes:
