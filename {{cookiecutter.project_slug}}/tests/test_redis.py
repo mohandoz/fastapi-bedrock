@@ -19,7 +19,7 @@ from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.lock import distributed_lock
 from {{ cookiecutter.package_name }}.events import consumer as consumer_module
 from {{ cookiecutter.package_name }}.events import relay as relay_module
-from {{ cookiecutter.package_name }}.events.consumer import consume, ensure_group
+from {{ cookiecutter.package_name }}.events.consumer import consume, ensure_group, reclaim_stale
 from {{ cookiecutter.package_name }}.events.models import OutboxEvent
 from {{ cookiecutter.package_name }}.events.publisher import enqueue_event, publish_event
 from {{ cookiecutter.package_name }}.events.relay import relay_outbox
@@ -96,10 +96,49 @@ async def test_consume_processes_and_acks(
 
     monkeypatch.setattr(consumer_module, "handle_event", fake_handle)
     await publish_event(redis_client, "item.created", {"id": "1"})
-    await asyncio.wait_for(
-        consume(redis_client, "consumer-1", stop=stop, block_ms=500), timeout=15
-    )
+    await asyncio.wait_for(consume(redis_client, "consumer-1", stop=stop, block_ms=500), timeout=15)
     assert seen == [("item.created", {"id": "1"})]
+    pending = cast(
+        "Any",
+        await redis_client.xpending(settings.redis_stream, settings.redis_consumer_group),
+    )
+    assert pending["pending"] == 0  # the processed message was XACKed out of the PEL
+
+
+async def test_consume_failure_leaves_pending_until_reclaimed(
+    redis_client: redis.Redis, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A raising handler must NOT ack; ``reclaim_stale`` re-delivers, then acks."""
+    delivered: list[str] = []
+    stop = asyncio.Event()
+
+    async def failing_handle(event_type: str, payload: dict[str, object], *, event_id: str) -> None:
+        delivered.append(event_id)
+        stop.set()
+        raise RuntimeError("handler exploded")
+
+    monkeypatch.setattr(consumer_module, "handle_event", failing_handle)
+    await publish_event(redis_client, "item.created", {"id": "1"})
+    await asyncio.wait_for(consume(redis_client, "consumer-1", stop=stop, block_ms=500), timeout=15)
+    pending = cast(
+        "Any",
+        await redis_client.xpending(settings.redis_stream, settings.redis_consumer_group),
+    )
+    assert pending["pending"] == 1  # failed message stays un-acked in the PEL
+
+    async def ok_handle(event_type: str, payload: dict[str, object], *, event_id: str) -> None:
+        delivered.append(event_id)
+
+    monkeypatch.setattr(consumer_module, "handle_event", ok_handle)
+    await reclaim_stale(redis_client, "consumer-2", min_idle_ms=0)
+
+    pending = cast(
+        "Any",
+        await redis_client.xpending(settings.redis_stream, settings.redis_consumer_group),
+    )
+    assert pending["pending"] == 0  # reclaimed, re-dispatched, and acked
+    assert len(delivered) == 2
+    assert delivered[0] == delivered[1]  # same CloudEvents id across redeliveries
 
 
 # --- Transactional outbox --------------------------------------------------
@@ -134,9 +173,7 @@ async def test_outbox_relay_publishes(
         await asyncio.sleep(0.5)
         stop.set()
 
-    await asyncio.gather(
-        relay_outbox(redis_client, stop=stop, poll_interval=0.05), stopper()
-    )
+    await asyncio.gather(relay_outbox(redis_client, stop=stop, poll_interval=0.05), stopper())
 
     assert await redis_client.xlen(settings.redis_stream) == 1
     async with session_factory() as session:

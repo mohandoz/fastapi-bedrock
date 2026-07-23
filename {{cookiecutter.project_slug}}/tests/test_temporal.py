@@ -34,7 +34,7 @@ async def test_process_activity(
     result = await ActivityEnvironment().run(
         process_{{ cookiecutter.first_entity }}_activity, str(entity_id)
     )
-    assert str(entity_id) in result
+    assert result == f"processed {{ cookiecutter.first_entity }} {entity_id}"
 
 
 async def test_process_workflow_e2e() -> None:
