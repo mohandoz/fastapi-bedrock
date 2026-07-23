@@ -7,9 +7,8 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from {{ cookiecutter.package_name }}.core.database import get_session
+from {{ cookiecutter.package_name }}.core.database import SessionDep
 from {{ cookiecutter.package_name }}.core.schemas import Page
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth.dependencies import get_current_active_user
@@ -24,9 +23,7 @@ from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }}.sch
 from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }}.service import {{ entity_class }}Service
 
 
-def get_{{ cookiecutter.first_entity }}_service(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> {{ entity_class }}Service:
+def get_{{ cookiecutter.first_entity }}_service(session: SessionDep) -> {{ entity_class }}Service:
     return {{ entity_class }}Service({{ entity_class }}Repository(session))
 
 

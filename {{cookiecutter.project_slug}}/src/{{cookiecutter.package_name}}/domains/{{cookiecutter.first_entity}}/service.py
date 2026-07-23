@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from sqlalchemy.orm.exc import StaleDataError
+
 from {{ cookiecutter.package_name }}.core.exceptions import NotFoundError
 from {{ cookiecutter.package_name }}.core.schemas import Page
 from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }}.models import {{ entity_class }}
@@ -37,7 +39,10 @@ class {{ entity_class }}Service:
 
     async def update(self, entity_id: UUID, data: {{ entity_class }}Update) -> {{ entity_class }}:
         obj = await self.get(entity_id)
-        return await self.repository.update(obj, data.model_dump(exclude_unset=True))
+        try:
+            return await self.repository.update(obj, data.model_dump(exclude_unset=True))
+        except StaleDataError as exc:  # row deleted between our SELECT and the UPDATE
+            raise NotFoundError(f"{{ entity_class }} {entity_id} not found") from exc
 
     async def delete(self, entity_id: UUID) -> None:
         obj = await self.get(entity_id)
