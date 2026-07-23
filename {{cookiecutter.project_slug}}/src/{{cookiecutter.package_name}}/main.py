@@ -6,13 +6,9 @@ from __future__ import annotations
 import asyncio
 {% endif -%}
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import ORJSONResponse
-{%- if cookiecutter.use_redis == "yes" and cookiecutter.use_observability == "yes" %}
-from opentelemetry.instrumentation.redis import RedisInstrumentor
-{%- endif %}
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -30,6 +26,7 @@ from {{ cookiecutter.package_name }}.core.middleware import (
 )
 {%- if cookiecutter.use_observability == "yes" %}
 from {{ cookiecutter.package_name }}.core.observability import (
+    attach_otel_log_handler,
     configure_observability,
     shutdown_observability,
 )
@@ -49,8 +46,8 @@ from {{ cookiecutter.package_name }}.core.sentry import init_sentry
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
 {%- if cookiecutter.use_observability == "yes" %}
-    # Attach OTLP exporters AFTER configure_logging() (it reassigns root.handlers).
-    configure_observability(app)
+    # Attach the OTLP log handler AFTER configure_logging() (it reassigns root.handlers).
+    attach_otel_log_handler(app)
 {%- endif %}
 {%- if cookiecutter.use_sentry == "yes" %}
     init_sentry()
@@ -60,30 +57,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.temporal_client = None
     app.state.temporal_lock = asyncio.Lock()
 {%- endif %}
-{%- if cookiecutter.use_redis == "yes" %}
-    # Built once here; redis-py opens no socket until the first command.
-    app.state.redis = create_redis_client()
+    # LIFO teardown: every step runs even if another raises, and a startup
+    # failure below unwinds whatever was already created.
+    async with AsyncExitStack() as stack:
 {%- if cookiecutter.use_observability == "yes" %}
-    RedisInstrumentor().instrument()
+        stack.callback(shutdown_observability, app)  # flush batch exporters last
 {%- endif %}
+        stack.push_async_callback(dispose_db)
+{%- if cookiecutter.use_redis == "yes" %}
+        # Built once here; redis-py opens no socket until the first command.
+        app.state.redis = create_redis_client()
+        stack.push_async_callback(app.state.redis.aclose)
 {%- endif %}
 {%- if cookiecutter.use_http_client == "yes" %}
-    app.state.http_client = create_http_client()
+        app.state.http_client = create_http_client()
+        stack.push_async_callback(app.state.http_client.aclose)
 {%- endif %}
-    # Auto-create tables only for local development; staging/production use Alembic.
-    if settings.is_local:
-        await init_db()
-    yield
-{%- if cookiecutter.use_redis == "yes" %}
-    await app.state.redis.aclose()
-{%- endif %}
-{%- if cookiecutter.use_http_client == "yes" %}
-    await app.state.http_client.aclose()
-{%- endif %}
-    await dispose_db()
-{%- if cookiecutter.use_observability == "yes" %}
-    shutdown_observability(app)  # flush batch exporters before exit
-{%- endif %}
+        # Auto-create tables only for local development; staging/production use Alembic.
+        if settings.is_local:
+            await init_db()
+        yield
 
 
 def create_app() -> FastAPI:
@@ -96,11 +89,16 @@ def create_app() -> FastAPI:
         license_info={"name": "MIT", "identifier": "MIT"},
         debug=settings.debug,
         lifespan=lifespan,
-        default_response_class=ORJSONResponse,
         openapi_url=f"{settings.api_v1_prefix}/openapi.json" if settings.docs_enabled else None,
         docs_url="/docs" if settings.docs_enabled else None,
         redoc_url="/redoc" if settings.docs_enabled else None,
     )
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+
+    # Registered FIRST so its middleware sits innermost: 429 responses still
+    # pass through the CORS, request-ID and security-header middleware below.
+    add_rate_limiting(app)
+{%- endif %}
 
     app.add_middleware(SecurityHeadersMiddleware)
     if settings.cors_origins:
@@ -115,8 +113,9 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestIDMiddleware)
 
     add_exception_handlers(app)
-{%- if cookiecutter.use_rate_limiting == "yes" %}
-    add_rate_limiting(app)
+{%- if cookiecutter.use_observability == "yes" %}
+    # Must run before the app serves traffic; see configure_observability.
+    configure_observability(app)
 {%- endif %}
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     return app

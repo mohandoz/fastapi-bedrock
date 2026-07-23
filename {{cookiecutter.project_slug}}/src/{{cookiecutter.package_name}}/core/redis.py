@@ -28,6 +28,11 @@ def create_redis_client() -> redis.Redis:
         decode_responses=True,  # str in/out (JSON cache + string stream fields)
         health_check_interval=30,
         socket_keepalive=True,
+        # Fail fast instead of wedging requests when Redis blackholes (redis-py
+        # blocks forever by default); transient timeouts are retried by the
+        # client's built-in Retry policy.
+        socket_connect_timeout=5,
+        socket_timeout=5,
     )
 
 

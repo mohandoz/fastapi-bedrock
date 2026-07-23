@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
-{% if cookiecutter.use_auth == "yes" -%}
 from pydantic import Field, field_validator, model_validator
-{%- else -%}
-from pydantic import Field, field_validator
-{%- endif %}
-from pydantic_settings import BaseSettings, SettingsConfigDict
+{% if cookiecutter.use_auth == "yes" -%}
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-{% if cookiecutter.use_auth == "yes" %}
 DEFAULT_SECRET_KEY = "change-me-to-a-long-random-secret"  # noqa: S105
-{% endif %}
+{%- else -%}
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+{%- endif %}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -33,6 +32,8 @@ class Settings(BaseSettings):
     environment: Literal["local", "staging", "production"] = "local"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
+    # Serve /docs, /redoc and the OpenAPI schema. Forced off in production
+    # unless DOCS_ENABLED is set explicitly.
     docs_enabled: bool = True
 
     # --- Logging ---
@@ -50,8 +51,10 @@ class Settings(BaseSettings):
     db_pool_recycle: int = 1800
 
     # --- CORS / trusted hosts (comma-separated in the environment) ---
-    cors_origins: list[str] = Field(default_factory=list)
-    allowed_hosts: list[str] = Field(default_factory=lambda: ["*"])
+    # NoDecode stops pydantic-settings from JSON-decoding these before
+    # validation, so `_split_csv` receives the raw comma-separated string.
+    cors_origins: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    allowed_hosts: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["*"])
 {%- if cookiecutter.use_auth == "yes" %}
 
     # --- Security ---
@@ -59,6 +62,8 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+    # Allow unauthenticated signup via POST /auth/register.
+    open_registration: bool = True
 {%- endif %}
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 
@@ -87,6 +92,10 @@ class Settings(BaseSettings):
     cache_default_ttl: int = 300
     redis_stream: str = "{{ cookiecutter.package_name }}:events"
     redis_consumer_group: str = "{{ cookiecutter.package_name }}-workers"
+    # Approximate hard cap on stream length (XADD MAXLEN ~). The consumer trims
+    # processed entries via XTRIM MINID, so this only discards events if
+    # consumers lag by more than this many entries.
+    redis_stream_maxlen: int = 1_000_000
 {%- endif %}
 {%- if cookiecutter.use_observability == "yes" %}
 
@@ -95,7 +104,9 @@ class Settings(BaseSettings):
     otel_service_name: str = "{{ cookiecutter.package_name }}"
     # Base OTLP endpoint; exporters append /v1/traces, /v1/metrics, /v1/logs.
     otel_exporter_otlp_endpoint: str = "http://localhost:4318"
-    otel_exporter_otlp_protocol: Literal["http/protobuf", "grpc"] = "http/protobuf"
+    # Only http/protobuf is supported (observability.py uses the HTTP exporters);
+    # any other value fails validation at boot.
+    otel_exporter_otlp_protocol: Literal["http/protobuf"] = "http/protobuf"
 {%- endif %}
 {%- if cookiecutter.use_http_client == "yes" %}
 
@@ -120,19 +131,29 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
         return value
-{%- if cookiecutter.use_auth == "yes" %}
 
     @model_validator(mode="after")
-    def _validate_production_secret(self) -> Settings:
-        if self.is_production:
+    def _validate_environment_safety(self) -> Settings:
+        """Reject configuration that is unsafe outside local development."""
+{%- if cookiecutter.use_auth == "yes" %}
+        if not self.is_local:
             if self.secret_key == DEFAULT_SECRET_KEY:
-                msg = "SECRET_KEY must be set to a strong, unique value in production."
+                msg = "SECRET_KEY must be overridden outside local development."
                 raise ValueError(msg)
             if len(self.secret_key) < 32:
-                msg = "SECRET_KEY must be at least 32 characters in production."
+                msg = "SECRET_KEY must be at least 32 characters outside local development."
                 raise ValueError(msg)
-        return self
 {%- endif %}
+        if self.is_production:
+            if self.debug:
+                msg = "DEBUG must be disabled in production."
+                raise ValueError(msg)
+            if not self.allowed_hosts or "*" in self.allowed_hosts:
+                msg = "ALLOWED_HOSTS must list explicit hostnames in production."
+                raise ValueError(msg)
+            if "docs_enabled" not in self.model_fields_set:
+                self.docs_enabled = False
+        return self
 
 
 @lru_cache

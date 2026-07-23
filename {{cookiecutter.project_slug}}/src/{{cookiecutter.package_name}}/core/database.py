@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -29,7 +31,13 @@ async_session_factory = async_sessionmaker(
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """Yield a session that commits on success and rolls back on error."""
+    """Yield a session that commits on success and rolls back on error.
+
+    Use it through ``SessionDep``: its ``scope="function"`` runs this teardown
+    BEFORE the response is sent, so commit-time failures (deadlocks,
+    serialization conflicts, dropped connections) surface as 500s instead of a
+    success response for data that was never persisted.
+    """
     async with async_session_factory() as session:
         try:
             yield session
@@ -37,6 +45,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 def _import_models() -> None:

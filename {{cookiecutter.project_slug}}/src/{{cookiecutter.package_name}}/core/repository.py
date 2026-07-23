@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func
+from sqlalchemy.orm import class_mapper
 from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -29,7 +30,19 @@ class BaseRepository[ModelT: SQLModel]:
         return await self.session.get(self.model, entity_id)
 
     async def list(self, *, offset: int = 0, limit: int = 100) -> Sequence[ModelT]:
-        result = await self.session.exec(select(self.model).offset(offset).limit(limit))
+        """Page through rows in a deterministic order (the primary key).
+
+        Offset pagination needs a stable ORDER BY — without one PostgreSQL may
+        repeat or skip rows across pages. Override in a subclass for a
+        domain-specific ordering (or keyset pagination on large tables).
+        """
+        statement = (
+            select(self.model)
+            .order_by(*class_mapper(self.model).primary_key)
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await self.session.exec(statement)
         return result.all()
 
     async def count(self) -> int:

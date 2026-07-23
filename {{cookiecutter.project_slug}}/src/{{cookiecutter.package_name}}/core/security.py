@@ -24,6 +24,16 @@ def verify_password(password: str, hashed: str) -> bool:
     return _password_hash.verify(password, hashed)
 
 
+# Computed once at import so a login attempt for an unknown email can burn a
+# real Argon2 verification, keeping its timing identical to the known-email path.
+_dummy_hash = _password_hash.hash("dummy-password")
+
+
+def verify_password_dummy(password: str) -> None:
+    """Verify ``password`` against a throwaway hash and discard the result."""
+    _password_hash.verify(password, _dummy_hash)
+
+
 def _create_token(subject: str, expires_delta: timedelta, token_type: TokenType) -> str:
     now = datetime.now(UTC)
     payload: dict[str, Any] = {

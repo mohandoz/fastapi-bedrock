@@ -14,6 +14,8 @@ from typing import Annotated, Any, TypeVar, cast
 import redis.asyncio as redis
 import structlog
 from fastapi import Depends
+from pydantic import TypeAdapter
+from pydantic_core import to_json
 
 from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.redis import RedisClient
@@ -24,7 +26,11 @@ T = TypeVar("T")
 
 
 class Cache:
-    """Thin cache-aside wrapper: JSON (de)serialisation + TTL, no magic."""
+    """Thin cache-aside wrapper: JSON (de)serialisation + TTL, no magic.
+
+    A Redis outage degrades gracefully: ``get`` logs and reports a miss and
+    ``set`` logs and skips the write, so a dead cache never fails a request.
+    """
 
     def __init__(
         self,
@@ -41,7 +47,11 @@ class Cache:
         return f"{self._prefix}:{key}"
 
     async def get(self, key: str) -> Any | None:
-        raw = await self._redis.get(self._key(key))
+        try:
+            raw = await self._redis.get(self._key(key))
+        except redis.RedisError:
+            logger.warning("cache.unavailable", key=key, op="get")
+            return None
         if raw is None:
             return None
         try:
@@ -51,11 +61,18 @@ class Cache:
             return None
 
     async def set(self, key: str, value: Any, *, ttl: int | None = None) -> None:
-        await self._redis.set(
-            self._key(key),
-            json.dumps(value, default=str),
-            ex=ttl if ttl is not None else self._default_ttl,
-        )
+        # Pydantic-aware serialisation (models, UUIDs, datetimes); raises
+        # PydanticSerializationError on values JSON cannot represent rather
+        # than silently stringifying them.
+        payload = to_json(value)
+        try:
+            await self._redis.set(
+                self._key(key),
+                payload,
+                ex=ttl if ttl is not None else self._default_ttl,
+            )
+        except redis.RedisError:
+            logger.warning("cache.unavailable", key=key, op="set")
 
     async def delete(self, *keys: str) -> int:
         if not keys:
@@ -63,12 +80,23 @@ class Cache:
         return int(await self._redis.delete(*(self._key(k) for k in keys)))
 
     async def get_or_set(
-        self, key: str, factory: Callable[[], Awaitable[T]], *, ttl: int | None = None
+        self,
+        key: str,
+        factory: Callable[[], Awaitable[T]],
+        *,
+        ttl: int | None = None,
+        adapter: TypeAdapter[T] | None = None,
     ) -> T:
-        """Return the cached value, or compute + store it on a miss."""
+        """Return the cached value, or compute + store it on a miss.
+
+        Values round-trip through JSON, so hits come back as plain JSON types.
+        Pass ``adapter`` (e.g. ``TypeAdapter(ItemRead)``) when the factory
+        returns model instances, so hits are re-validated to the same type the
+        factory produces instead of leaking raw dicts.
+        """
         cached = await self.get(key)
         if cached is not None:
-            return cast("T", cached)
+            return adapter.validate_python(cached) if adapter is not None else cast("T", cached)
         value = await factory()
         await self.set(key, value, ttl=ttl)
         return value
