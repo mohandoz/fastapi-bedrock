@@ -8,3 +8,11 @@ Apply migrations:
 
 Roll back the most recent migration:
     make downgrade
+{%- if cookiecutter.use_auth == "yes" %}
+
+Note on users.email: AuthService lowercases emails on register/login, so
+app-written rows arrive normalized. For defense in depth against out-of-band
+writes, make the unique index case-insensitive in your first revision
+(works on PostgreSQL and SQLite >= 3.9):
+    op.create_index("ux_users_email_lower", "users", [sa.text("lower(email)")], unique=True)
+{%- endif %}

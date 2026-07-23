@@ -10,16 +10,28 @@ repository, service and router.
 
 - [uv](https://docs.astral.sh/uv/)
 - Python {{ cookiecutter.python_version }}+ (uv can install it for you)
+{%- if cookiecutter.use_docker == "yes" %}
 - Docker — runs PostgreSQL for local development and the test suite
+{%- else %}
+- PostgreSQL — a running instance for local development (see `DATABASE_URL`)
+- Docker — runs the test suite's throwaway PostgreSQL (testcontainers)
+{%- endif %}
 
 ## Quick start
-
+{% if cookiecutter.use_docker == "yes" %}
 ```bash
 uv sync                     # create the virtualenv and install dependencies
-cp .env.example .env        # then adjust SECRET_KEY / DATABASE_URL
+cp .env.example .env        # then adjust {% if cookiecutter.use_auth == "yes" %}SECRET_KEY / {% endif %}DATABASE_URL
 docker compose up -d db     # start PostgreSQL
 make run                    # http://127.0.0.1:8000/docs
 ```
+{%- else %}
+```bash
+uv sync                     # create the virtualenv and install dependencies
+cp .env.example .env        # point DATABASE_URL at your PostgreSQL{% if cookiecutter.use_auth == "yes" %}, set SECRET_KEY{% endif %}
+make run                    # http://127.0.0.1:8000/docs
+```
+{%- endif %}
 
 The app runs on PostgreSQL (async, via asyncpg). In the local environment tables
 are created automatically on startup; staging and production use Alembic.
@@ -29,7 +41,7 @@ are created automatically on startup; staging and production use Alembic.
 ```text
 src/{{ cookiecutter.package_name }}/
   main.py              # app factory, lifespan, middleware
-  core/                # config, database, repository base, logging, security
+  core/                # config, database, repository base, logging{% if cookiecutter.use_auth == "yes" %}, security{% endif %}
   api/                 # router aggregation + /health, /ready
   domains/             # one vertical slice per entity
 {%- if cookiecutter.use_auth == "yes" %}
@@ -87,6 +99,34 @@ JWT bearer authentication using the OAuth2 password flow:
 where `{{ '{prefix}' }}` is `{{ '/api/v1' }}` by default. The `{{ cookiecutter.first_entity }}`
 routes are protected and require a valid access token.
 {% endif %}
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+## Rate limiting
+
+Every route is limited to `RATE_LIMIT` (default `100/minute`) per client IP.
+{%- if cookiecutter.use_auth == "yes" %}
+`POST {{ '{prefix}' }}/auth/register` is stricter (`5/minute`): registration is
+unauthenticated and abusable.
+{%- endif %}
+{%- if cookiecutter.use_redis == "yes" %}
+Counters live in Redis, so limits are shared across workers and replicas and
+survive restarts; a Redis outage degrades to per-process in-memory counting.
+{%- else %}
+Counters are in-memory and per-process: with multiple workers the effective
+limit multiplies by the worker count, and counters reset on every restart.
+{%- endif %}
+
+**Behind a reverse proxy or load balancer** the peer address is the proxy's, so
+all clients collapse into one shared bucket unless forwarded headers are
+{%- if cookiecutter.use_docker == "yes" %}
+trusted. The container CMD (`fastapi run`) already passes uvicorn
+`--proxy-headers`; also set `FORWARDED_ALLOW_IPS=<proxy address>` on the
+container so the forwarded header is honored — and only from that proxy.
+{%- else %}
+trusted. Run uvicorn with `--proxy-headers` and set
+`FORWARDED_ALLOW_IPS=<proxy address>` so the forwarded header is honored — and
+only from that proxy.
+{%- endif %}
+{% endif %}
 ## Database migrations
 
 Models are created automatically in the local environment. For staging and
@@ -104,6 +144,8 @@ docker compose up --build
 ```
 
 This starts the API against a PostgreSQL container and applies migrations on boot.
+All published ports bind to `127.0.0.1` only; setting `POSTGRES_PASSWORD` in
+`.env` overrides the local PostgreSQL password across the whole compose stack.
 {% endif %}
 {%- if cookiecutter.use_temporal == "yes" %}
 ## Temporal
@@ -112,7 +154,7 @@ Durable background workflows via [Temporal](https://temporal.io/). All Temporal
 code lives in `src/{{ cookiecutter.package_name }}/temporal/` (client, worker, workflows,
 activities, router). Workflows stay deterministic; every side effect (including
 DB access) happens inside an activity.
-
+{% if cookiecutter.use_docker == "yes" %}
 Run the full stack — API, PostgreSQL, Temporal server, Web UI and worker:
 
 ```bash
@@ -127,6 +169,18 @@ Run the worker alone (against a local `temporal server start-dev`):
 ```bash
 make worker
 ```
+{%- else %}
+Run a local development server ([Temporal CLI](https://docs.temporal.io/cli)),
+the worker and the API:
+
+```bash
+temporal server start-dev   # Temporal server + Web UI on http://localhost:8233
+make worker                 # in a second terminal
+make run                    # in a third terminal
+```
+
+Start the demo workflow: `POST {{ '/api/v1' }}/temporal/{{ cookiecutter.first_entity }}s/{id}/process`
+{%- endif %}
 {% endif %}
 {%- if cookiecutter.use_redis == "yes" %}
 ## Redis (cache + events + lock)
@@ -144,20 +198,35 @@ injected via `RedisClient`.
   the **CloudEvents 1.0** envelope, and a consumer group processes them
   (at-least-once, `XACK` + `XAUTOCLAIM`). The CloudEvents `id` is the idempotency
   key. This removes the dual-write race between the database and the broker.
+  The consumer periodically reclaims stale pending entries (`XAUTOCLAIM`) and
+  trims fully processed ones (`XTRIM MINID`); `REDIS_STREAM_MAXLEN` (default
+  1,000,000) is only an approximate hard cap on unprocessed backlog — monitor
+  `XLEN`/`XPENDING`. Requires Redis >= 6.2.
 
 ```bash
 make events-worker        # runs the outbox relay + the Streams consumer
 ```
-
+{% if cookiecutter.use_docker == "yes" %}
 `docker compose up` starts Redis and the events worker.
+{%- else %}
+Requires a running Redis — install it locally (`brew install redis` /
+`apt install redis-server`) and point `REDIS_URL` at it.
+{%- endif %}
 {% endif %}
 {%- if cookiecutter.use_observability == "yes" %}
 ## Observability (OpenTelemetry + Grafana)
-
+{% if cookiecutter.use_docker == "yes" %}
 Set `OTEL_ENABLED=true` to export **traces, metrics and logs** over OTLP.
 `docker compose up` starts `grafana/otel-lgtm` — one container bundling the
 OpenTelemetry Collector, **Loki** (logs), Tempo (traces), Prometheus (metrics)
 and **Grafana**, with datasources pre-provisioned.
+{%- else %}
+Set `OTEL_ENABLED=true` to export **traces, metrics and logs** over OTLP, and
+point `OTEL_EXPORTER_OTLP_ENDPOINT` at an OpenTelemetry Collector. For local
+work, `docker run --rm -p 3000:3000 -p 4318:4318 grafana/otel-lgtm` bundles the
+Collector, **Loki** (logs), Tempo (traces), Prometheus (metrics) and
+**Grafana**, with datasources pre-provisioned.
+{%- endif %}
 
 - Grafana: http://localhost:3000 (admin / admin)
 - Logs carry `trace_id` / `span_id`, so Loki links straight to Tempo traces.
@@ -193,6 +262,28 @@ Tests spin up a throwaway PostgreSQL container with
 [testcontainers](https://testcontainers.com/) and drive the API through an async
 HTTP client, so **Docker must be running**. No SQLite is used anywhere.
 
+## Production checklist
+
+Unsafe configuration fails at boot (`core/config.py`) instead of silently
+degrading:
+{% if cookiecutter.use_auth == "yes" %}
+- `SECRET_KEY` must be overridden and at least 32 characters everywhere outside
+  `local` (staging **and** production); the shipped default is rejected.
+{%- endif %}
+- In production, `DEBUG` must be `false` and `ALLOWED_HOSTS` must list explicit
+  hostnames (`*` is rejected).
+- `/docs`, `/redoc` and the OpenAPI schema are disabled in production unless
+  `DOCS_ENABLED=true` is set explicitly.
+{%- if cookiecutter.use_auth == "yes" %}
+- `OPEN_REGISTRATION` (default `true`) controls public signup; set it to `false`
+  for invite-only deployments — `POST {{ '{prefix}' }}/auth/register` then
+  returns 403.
+{%- endif %}
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+- Behind a proxy, set `FORWARDED_ALLOW_IPS` so rate limits key on real client
+  IPs (see [Rate limiting](#rate-limiting)).
+{%- endif %}
+
 ## Maintainability decisions
 
 > Personalise this section for your project — reviewers read it to judge how you
@@ -210,20 +301,27 @@ boundaries, and the request/response schemas Pydantic v2 validates at the edges.
 Prefer making illegal states unrepresentable over defensive `if`s.
 
 **Dependencies.** Managed with `uv`; runtime and dev groups are separated and the
-resolved `uv.lock` is committed for reproducible installs. Dependabot opens
-grouped weekly PRs for Python packages and GitHub Actions.
-
+resolved `uv.lock` is committed for reproducible installs.
+Dependabot opens grouped weekly PRs for Python packages and GitHub Actions.
+{% if cookiecutter.use_github_actions == "yes" %}
 **Upgrades.** Upgrades arrive as Dependabot PRs and merge only once CI (ruff,
 mypy, pytest) is green; `requires-python` sets the floor and the lockfile keeps
 every environment identical.
+{%- else %}
+**Upgrades.** Refresh the lockfile deliberately with `uv lock --upgrade` and
+merge only once `make check` (ruff, mypy, pytest) passes; `requires-python` sets
+the floor and the lockfile keeps every environment identical.
+{%- endif %}
 
 **What the tests protect.** The CRUD contract{% if cookiecutter.use_auth == "yes" %}, the auth flows,{% endif %} and the
 health probes — exercised against a real PostgreSQL (via testcontainers) so
 behaviour matches production rather than a SQLite stand-in.
 
 **What I'd improve next.** *(your call — e.g. richer pagination metadata,
-OpenTelemetry tracing, per-domain integration tests, examples in the OpenAPI
-schema, a Redis-backed rate-limit store.)*
+{%- if cookiecutter.use_observability == "no" %} OpenTelemetry tracing,{% endif %}
+per-domain integration tests, examples in the OpenAPI schema
+{%- if cookiecutter.use_rate_limiting == "no" or cookiecutter.use_redis == "no" %},
+a Redis-backed rate-limit store{% endif %}.)*
 
 ---
 
