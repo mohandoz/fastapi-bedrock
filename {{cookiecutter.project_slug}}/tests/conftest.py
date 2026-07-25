@@ -15,9 +15,9 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from testcontainers.postgres import PostgresContainer
+from testcontainers.community.postgres import PostgresContainer
 {%- if cookiecutter.use_redis == "yes" %}
-from testcontainers.redis import RedisContainer
+from testcontainers.community.redis import RedisContainer
 {%- endif %}
 
 # --- Hermetic test environment ---------------------------------------------
