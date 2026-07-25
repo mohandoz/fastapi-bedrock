@@ -465,7 +465,7 @@ override point.
 
 **Dependencies.** Managed with `uv`; runtime and dev groups are separated and the
 resolved `uv.lock` is committed for reproducible installs.
-Dependabot opens grouped weekly PRs for Python packages and GitHub Actions{% if cookiecutter.use_docker == "yes" %}, plus Docker and Compose base images{% endif %}.
+Dependabot opens grouped weekly PRs for Python packages{% if cookiecutter.use_github_actions == "yes" %} and GitHub Actions{% endif %}{% if cookiecutter.use_docker == "yes" %}, plus Docker and Compose base images{% endif %}.
 Pre-commit hook revs are pinned in `.pre-commit-config.yaml`; refresh them with
 `pre-commit autoupdate`, or enable the repo on [pre-commit.ci](https://pre-commit.ci)
 — the shipped config already carries a `ci:` block for it.
