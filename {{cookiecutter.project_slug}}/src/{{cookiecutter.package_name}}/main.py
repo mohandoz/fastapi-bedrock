@@ -15,7 +15,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from {{ cookiecutter.package_name }}.api.router import api_router
 from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.database import dispose_db, init_db
-from {{ cookiecutter.package_name }}.core.exceptions import add_exception_handlers
+from {{ cookiecutter.package_name }}.core.exceptions import PROBLEM_RESPONSES, add_exception_handlers
 {%- if cookiecutter.use_http_client == "yes" %}
 from {{ cookiecutter.package_name }}.core.http import create_http_client
 {%- endif %}
@@ -44,6 +44,9 @@ from {{ cookiecutter.package_name }}.core.redis import create_redis_client
 {%- endif %}
 {%- if cookiecutter.use_sentry == "yes" %}
 from {{ cookiecutter.package_name }}.core.sentry import init_sentry
+{%- endif %}
+{%- if cookiecutter.use_auth == "yes" %}
+from {{ cookiecutter.package_name }}.domains.auth.bootstrap import ensure_first_superuser
 {%- endif %}
 
 
@@ -84,6 +87,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 {%- endif %}
         # No-op unless db_auto_create is enabled (local default); see migrations/README.
         await init_db()
+{%- if cookiecutter.use_auth == "yes" %}
+        # Create or promote the FIRST_SUPERUSER account (no-op unless configured).
+        await ensure_first_superuser()
+{%- endif %}
         yield
 
 
@@ -130,7 +137,9 @@ def create_app() -> FastAPI:
     # Must run before the app serves traffic; see configure_observability.
     configure_observability(app)
 {%- endif %}
-    app.include_router(api_router, prefix=settings.api_v1_prefix)
+    # PROBLEM_RESPONSES documents 422/500 problem+json on every route and
+    # replaces FastAPI's default HTTPValidationError 422 model.
+    app.include_router(api_router, prefix=settings.api_v1_prefix, responses=PROBLEM_RESPONSES)
     return app
 
 

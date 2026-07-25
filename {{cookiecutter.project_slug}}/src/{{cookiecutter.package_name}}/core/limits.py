@@ -12,6 +12,8 @@ from fastapi import FastAPI, HTTPException, status
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from {{ cookiecutter.package_name }}.core.exceptions import PROBLEM_CONTENT_TYPE, Problem
+
 logger = structlog.get_logger(__name__)
 
 
@@ -45,9 +47,17 @@ class BodySizeLimitMiddleware:
         declared = _content_length(scope)
         if declared is not None and declared > self.max_body_size:
             logger.warning("request.body_too_large", declared=declared, limit=self.max_body_size)
+            # Built by hand: middleware responses bypass the exception handlers,
+            # but must still render as RFC 9457 problem+json.
             response = JSONResponse(
                 status_code=status.HTTP_413_CONTENT_TOO_LARGE,
-                content={"detail": "Request body too large."},
+                content=Problem(
+                    title="Content Too Large",
+                    status=status.HTTP_413_CONTENT_TOO_LARGE,
+                    detail="Request body too large.",
+                    instance=scope.get("path"),
+                ).model_dump(exclude_none=True),
+                media_type=PROBLEM_CONTENT_TYPE,
             )
             await response(scope, receive, send)
             return
@@ -114,7 +124,13 @@ class RequestTimeoutMiddleware:
             logger.warning("request.timeout", path=scope.get("path"), timeout=self.timeout)
             response = JSONResponse(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                content={"detail": "Request timed out."},
+                content=Problem(
+                    title="Gateway Timeout",
+                    status=status.HTTP_504_GATEWAY_TIMEOUT,
+                    detail="Request timed out.",
+                    instance=scope.get("path"),
+                ).model_dump(exclude_none=True),
+                media_type=PROBLEM_CONTENT_TYPE,
             )
             await response(scope, receive, send)
 

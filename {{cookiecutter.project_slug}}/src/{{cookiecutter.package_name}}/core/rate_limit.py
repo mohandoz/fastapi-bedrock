@@ -22,8 +22,7 @@ limit multiplies by the worker count, and counters reset on every restart.
 from __future__ import annotations
 
 from fastapi import FastAPI
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from slowapi import Limiter
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
@@ -40,13 +39,13 @@ limiter = Limiter(
 
 
 def add_rate_limiting(app: FastAPI) -> None:
-    """Register the limiter, its 429 handler and the middleware.
+    """Register the limiter and its middleware.
 
-    Call BEFORE the other ``add_middleware`` registrations (Starlette inserts
-    each new middleware outermost), so rate-limited responses still traverse
-    the CORS, request-ID and security-header middleware.
+    The 429 problem+json handler is registered by
+    ``core.exceptions.add_exception_handlers``. Call BEFORE the other
+    ``add_middleware`` registrations (Starlette inserts each new middleware
+    outermost), so rate-limited responses still traverse the CORS, request-ID
+    and security-header middleware.
     """
     app.state.limiter = limiter
-    # slowapi's handler is typed for RateLimitExceeded rather than Exception.
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
     app.add_middleware(SlowAPIMiddleware)
