@@ -27,7 +27,9 @@ NOT_DOCUMENTED = {
     "description",
     "contact_name",
     "contact_email",
+{%- if cookiecutter.use_auth == "yes" %}
     "algorithm",  # JWT signing algorithm; changing it invalidates issued tokens
+{%- endif %}
 }
 
 
