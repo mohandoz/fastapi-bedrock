@@ -1,0 +1,93 @@
+site_name: fastapi-bedrock
+site_description: >-
+  Production-ready FastAPI + Domain-Driven Design cookiecutter template:
+  async SQLModel, JWT auth, Temporal workflows, transactional outbox events,
+  OpenTelemetry — composed feature by feature.
+site_url: https://mohandoz.github.io/fastapi-bedrock/
+repo_url: https://github.com/mohandoz/fastapi-bedrock
+repo_name: mohandoz/fastapi-bedrock
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  logo: assets/mark.svg
+  favicon: assets/favicon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - search.suggest
+    - search.highlight
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Options matrix: options.md
+  - Architecture: architecture.md
+  - Recipes: recipes.md
+  - Upgrading with cruft: upgrading.md
+  - Maintainer checklist: maintainer-checklist.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        # `format` is intentionally omitted: pymdownx defaults it to
+        # `superfences.fence_code_format` (the same callable the usual
+        # `!!python/name:` tag resolves to), and omitting the tag keeps this
+        # file loadable by plain `yaml.safe_load` for tooling/CI validation.
+        - name: mermaid
+          class: mermaid
+
+plugins:
+  - search
+  - llmstxt:
+      markdown_description: >-
+        fastapi-bedrock is a Cookiecutter template for production-ready FastAPI
+        services organised as Domain-Driven Design vertical slices. Generated
+        projects ship with async SQLModel/SQLAlchemy 2.0 on PostgreSQL, Alembic
+        migrations, JWT auth with refresh-token rotation, structlog JSON
+        logging, Ruff, strict mypy, pytest with testcontainers, and optional
+        per-flag modules: Docker, GitHub Actions CI, rate limiting, Sentry,
+        Temporal durable workflows, Redis (cache + transactional outbox
+        events), OpenTelemetry observability and a resilient HTTP client.
+        It is not related to Amazon Bedrock.
+      full_output: llms-full.txt
+      sections:
+        Documentation:
+          - index.md: What fastapi-bedrock is and why it exists
+          - quickstart.md: Generate and run a project in minutes
+          - options.md: What every cookiecutter option adds to the generated project
+          - architecture.md: The DDD vertical-slice layout and request flow
+          - recipes.md: Post-generation integration guides shipped with every project
+          - upgrading.md: Pulling template updates into generated projects with cruft

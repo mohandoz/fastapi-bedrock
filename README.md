@@ -7,16 +7,27 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/<your-org>/fastapi-bedrock/actions/workflows/test-template.yml"><img src="https://github.com/<your-org>/fastapi-bedrock/actions/workflows/test-template.yml/badge.svg" alt="Test template"></a>
+  <a href="https://github.com/mohandoz/fastapi-bedrock/actions/workflows/test-template.yml"><img src="https://github.com/mohandoz/fastapi-bedrock/actions/workflows/test-template.yml/badge.svg" alt="Test template"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/mohandoz/fastapi-bedrock"><img src="https://api.scorecard.dev/projects/github.com/mohandoz/fastapi-bedrock/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/mohandoz/fastapi-bedrock/actions/workflows/codeql.yml"><img src="https://github.com/mohandoz/fastapi-bedrock/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="https://mohandoz.github.io/fastapi-bedrock/"><img src="https://img.shields.io/badge/docs-mohandoz.github.io-009485" alt="Documentation"></a>
   <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/types-mypy%20strict-blue" alt="mypy strict">
   <img src="https://img.shields.io/badge/lint-ruff-D7FF64" alt="Ruff">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
 </p>
 
+> [!NOTE]
+> **Not related to Amazon Bedrock.** *Bedrock* here means what it says on the
+> tin — the solid layer of rock you build on. This is a Cookiecutter template
+> for FastAPI backend services; for AWS's managed LLM platform, see
+> [Amazon Bedrock](https://aws.amazon.com/bedrock/).
+
 A modern [Cookiecutter](https://cookiecutter.readthedocs.io/) template for
 production-ready **FastAPI** services organised with a **Domain-Driven Design**
 (vertical-slice) layout — the solid foundation you build your service on.
+Full documentation lives at
+**[mohandoz.github.io/fastapi-bedrock](https://mohandoz.github.io/fastapi-bedrock/)**.
 
 Every generated project ships fully wired: async database access, a clean
 repository/service layering, JWT authentication, tests, linting, typing,
@@ -39,6 +50,40 @@ Docker and CI — nothing to bolt on afterwards.
 | Logging             | [structlog](https://www.structlog.org/) (JSON) + request IDs      |
 | Runtime extras      | Docker + compose, CI, rate limiting, Sentry, Temporal, Redis, OTel/Grafana |
 | Dev experience      | devcontainer + VS Code presets, `make new-domain` scaffolder, `make seed`, keep-a-changelog + conventional commits |
+
+## How it compares
+
+Both alternatives below are excellent — this table exists to route you to the
+right one, not to win. The short version: **fastapi-bedrock is backend-only
+and composable**; the others ship a frontend and a fixed feature set.
+
+| | **fastapi-bedrock** | [full-stack-fastapi-template](https://github.com/fastapi/full-stack-fastapi-template) | [litestar-fullstack](https://github.com/litestar-org/litestar-fullstack) |
+| --- | --- | --- | --- |
+| What it is | Backend-only cookiecutter template | Official FastAPI full-stack template | Litestar reference application |
+| Framework | FastAPI | FastAPI | Litestar |
+| Frontend | None — API-first by design | React + TS, Vite, Tailwind, shadcn/ui, generated API client, dark mode | React + Vite |
+| ORM | SQLModel (SQLAlchemy 2.0, fully async) | SQLModel | SQLAlchemy 2.0 (Advanced Alchemy) |
+| Architecture | DDD vertical slices; repository → service → router | App-package layout | Service/repository patterns |
+| Feature selection | 11 opt-in/out flags, every combination CI-baked | Fixed feature set | Fixed feature set |
+| Generation & updates | cookiecutter + `cruft update` diffs | Clone or Copier | Clone/fork |
+| Auth | JWT access + refresh **rotation with reuse detection**, Argon2, email verification, GDPR export/erase | JWT + password recovery | JWT, MFA, OAuth, roles/teams — the richest auth of the three |
+| Background work | Temporal durable workflows + transactional outbox → Redis Streams (CloudEvents) | — | SAQ task queue |
+| Observability | OpenTelemetry traces/metrics/logs + Grafana LGTM stack (optional) | — | structlog |
+| Rate limiting | slowapi, Redis-shared counters (optional) | — | — |
+| Error format | RFC 9457 `problem+json` throughout | FastAPI defaults | Litestar defaults |
+| Tests | pytest + testcontainers (**real PostgreSQL**) | pytest + Playwright E2E | pytest |
+| Typing | `mypy --strict` over `src` *and* `tests` | mypy | mypy |
+| Deployment | Docker + compose, k8s manifests | Docker compose + Traefik guides | Docker multi-stage, distroless variant |
+| Community | Young, single maintainer | Official FastAPI org — by far the largest community | Litestar org |
+
+**Choose full-stack-fastapi-template** if you want a working UI on day one,
+the official FastAPI path, and the reassurance of a huge community.
+**Choose litestar-fullstack** if you prefer Litestar's batteries (its auth
+surface — MFA, OAuth, teams — is genuinely richer) and don't need FastAPI.
+**Choose fastapi-bedrock** for backend services and microservices where the
+frontend lives elsewhere, and you want durable workflows, event-driven
+patterns and observability composed per-project — with `cruft` keeping
+generated projects updatable.
 
 ## Architecture
 
@@ -97,10 +142,14 @@ layer stays swappable.
 
 ```bash
 # recommended: cruft, so generated projects can pull template updates later
-uvx cruft create gh:<your-org>/fastapi-bedrock
+uvx cruft create gh:mohandoz/fastapi-bedrock
 
 # plain cookiecutter works too (no update tracking)
-uvx cookiecutter gh:<your-org>/fastapi-bedrock
+uvx cookiecutter gh:mohandoz/fastapi-bedrock
+
+# deterministic, prompt-free scaffold (CI and coding agents; unset options keep defaults)
+uvx cookiecutter gh:mohandoz/fastapi-bedrock --no-input \
+  project_name="Acme API" first_entity=order use_auth=yes use_docker=yes use_mcp=yes
 ```
 
 [cruft](https://cruft.github.io/cruft/) records the template revision in
@@ -132,6 +181,8 @@ generation finishes the hook initialises a fresh git repository and runs
 | `use_redis`           | Redis cache + outbox/Streams events + lock | `no`                 |
 | `use_observability`   | Include OpenTelemetry + Grafana/Loki/Tempo| `no`                  |
 | `use_http_client`     | Resilient outbound HTTP client            | `no`                  |
+| `use_mcp`             | MCP server (FastMCP v3) for AI agents at `/mcp` | `no`            |
+| `use_llm_example`     | Anthropic LLM domain: structured output + SSE | `no`              |
 
 ## What you get after generation
 
@@ -155,6 +206,26 @@ Codespaces ready, compose-based when `use_docker=yes`), `.vscode/` presets
 (Ruff format-on-save, pytest discovery), a keep-a-changelog `CHANGELOG.md` and
 a `CONTRIBUTING.md` covering conventional commits and the `cruft update`
 workflow.
+
+## Documentation & community
+
+The **[docs site](https://mohandoz.github.io/fastapi-bedrock/)** covers what a
+README can't: a [quickstart](https://mohandoz.github.io/fastapi-bedrock/quickstart/),
+the full [options matrix](https://mohandoz.github.io/fastapi-bedrock/options/)
+for the eleven `use_*` flags, the
+[architecture tour](https://mohandoz.github.io/fastapi-bedrock/architecture/),
+the shipped [recipes](https://mohandoz.github.io/fastapi-bedrock/recipes/) and
+the [cruft upgrade guide](https://mohandoz.github.io/fastapi-bedrock/upgrading/).
+It also serves [`/llms.txt`](https://mohandoz.github.io/fastapi-bedrock/llms.txt)
+for AI assistants.
+
+- **Questions about your generated project** →
+  [Discussions](https://github.com/mohandoz/fastapi-bedrock/discussions)
+- **Bugs in the template itself** →
+  [issue forms](https://github.com/mohandoz/fastapi-bedrock/issues/new/choose)
+- **Contributing** → [CONTRIBUTING.md](CONTRIBUTING.md) (template-specific
+  workflows: rendering locally, the CI bake matrix, Jinja gotchas), governed
+  by the [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## License
 

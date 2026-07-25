@@ -429,6 +429,8 @@ local database with demo data via `make seed`.
   table and one example each. Read it before adding any async work.
 {%- if cookiecutter.use_auth == "yes" %}
 - [Social login (OAuth / OIDC) with Authlib](docs/recipes/oauth-social-login.md)
+- [Cloudflare Turnstile on unauthenticated endpoints](docs/recipes/turnstile-verification.md)
+- [Passkeys (WebAuthn) with py_webauthn](docs/recipes/passkeys-webauthn.md)
 {%- endif %}
 - [Admin back-office with SQLAdmin](docs/recipes/admin-sqladmin.md)
 - [Feature flags with OpenFeature](docs/recipes/feature-flags-openfeature.md)
@@ -550,5 +552,8 @@ a Redis-backed rate-limit store{% endif %}.)*
 
 <p align="center">
   <img src=".github/bedrock-mark.svg" alt="" width="22" valign="middle">
-  &nbsp;Scaffolded with <strong>fastapi-bedrock</strong>
+  &nbsp;Scaffolded with <a href="https://github.com/mohandoz/fastapi-bedrock"><strong>fastapi-bedrock</strong></a>
 </p>
+<!-- Uncomment to add a badge linking back to the template (or delete this block to opt out):
+<p align="center"><a href="https://github.com/mohandoz/fastapi-bedrock"><img src="https://img.shields.io/badge/scaffolded%20with-fastapi--bedrock-009485" alt="Scaffolded with fastapi-bedrock"></a></p>
+-->

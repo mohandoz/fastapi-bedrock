@@ -21,3 +21,6 @@ uv.lock
 
 # Rendered output produced while testing the template
 /output/
+
+# Local mkdocs build output
+/site/

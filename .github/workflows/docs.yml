@@ -1,0 +1,71 @@
+# Builds the mkdocs-material docs site (docs/ + mkdocs.yml) and deploys it to
+# the gh-pages branch. Pull requests get a strict build check only.
+#
+# One-time setup: after the first successful deploy, enable GitHub Pages from
+# the gh-pages branch (see docs/maintainer-checklist.md).
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (strict)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build the site
+        run: >-
+          uvx --with 'mkdocs-material>=9.7' --with 'mkdocs-llmstxt>=0.5'
+          mkdocs build --strict
+
+  deploy:
+    name: Deploy to gh-pages
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Build and push the site
+        run: >-
+          uvx --with 'mkdocs-material>=9.7' --with 'mkdocs-llmstxt>=0.5'
+          mkdocs gh-deploy --force --no-history

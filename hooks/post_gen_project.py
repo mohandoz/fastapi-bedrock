@@ -55,6 +55,8 @@ def prune_disabled_features() -> None:
             SRC / "email-templates",
             "tests/test_auth.py",
             "docs/recipes/oauth-social-login.md",
+            "docs/recipes/turnstile-verification.md",
+            "docs/recipes/passkeys-webauthn.md",
         )
     if not USE_DOCKER:
         # dynamicconfig/ is only consumed by the docker-compose Temporal service;
