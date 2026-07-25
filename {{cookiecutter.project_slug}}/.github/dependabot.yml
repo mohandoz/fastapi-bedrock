@@ -15,3 +15,21 @@ updates:
     groups:
       python-dependencies:
         patterns: ["*"]
+{%- if cookiecutter.use_docker == "yes" %}
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      docker-images:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      compose-images:
+        patterns: ["*"]
+{%- endif %}
