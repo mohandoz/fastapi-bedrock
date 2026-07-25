@@ -35,6 +35,9 @@ os.environ["DATABASE_URL"] = (  # never connected to; fixtures use the container
 os.environ["SECRET_KEY"] = "test-only-secret-key-not-for-production-use"
 os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
 os.environ["REFRESH_TOKEN_EXPIRE_DAYS"] = "7"
+os.environ["EMAILS_ENABLED"] = "false"
+os.environ["REQUIRE_EMAIL_VERIFICATION"] = "false"
+os.environ["EMAIL_TOKEN_EXPIRE_MINUTES"] = "60"
 {%- endif %}
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 os.environ["RATE_LIMIT"] = "100/minute"

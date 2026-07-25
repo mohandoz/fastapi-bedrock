@@ -12,6 +12,8 @@ class UserBase(SQLModel):
     email: EmailStr = Field(index=True, unique=True)
     full_name: str | None = Field(default=None, max_length=255)
     is_active: bool = Field(default=True)
+    # Only enforced at login when REQUIRE_EMAIL_VERIFICATION is enabled.
+    is_verified: bool = Field(default=False)
     is_superuser: bool = Field(default=False)
 
 

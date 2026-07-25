@@ -31,3 +31,20 @@ class Token(SQLModel):
 
 class RefreshRequest(SQLModel):
     refresh_token: str
+
+
+class Message(SQLModel):
+    detail: str
+
+
+class PasswordResetRequest(SQLModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(SQLModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class EmailVerificationRequest(SQLModel):
+    token: str

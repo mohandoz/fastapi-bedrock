@@ -95,9 +95,18 @@ JWT bearer authentication using the OAuth2 password flow:
 - `POST {{ '{prefix}' }}/auth/login` — exchange credentials for access + refresh tokens
 - `POST {{ '{prefix}' }}/auth/refresh` — mint a new access token
 - `GET  {{ '{prefix}' }}/auth/me` — the current user
+- `POST {{ '{prefix}' }}/auth/forgot-password` — email a password-reset link (always 202)
+- `POST {{ '{prefix}' }}/auth/reset-password` — set a new password with the emailed token
+- `POST {{ '{prefix}' }}/auth/verify-email` — confirm an email address
 
 where `{{ '{prefix}' }}` is `{{ '/api/v1' }}` by default. The `{{ cookiecutter.first_entity }}`
 routes are protected and require a valid access token.
+
+Outbound email is logged instead of sent until `EMAILS_ENABLED=true` with
+`SMTP_*` configured (`core/email.py`), so local development needs no SMTP
+server. Reset and verification links point at `FRONTEND_URL` and expire after
+`EMAIL_TOKEN_EXPIRE_MINUTES`; set `REQUIRE_EMAIL_VERIFICATION=true` to block
+login until the address is verified.
 {% endif %}
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 ## Rate limiting
@@ -278,6 +287,7 @@ degrading:
 - `OPEN_REGISTRATION` (default `true`) controls public signup; set it to `false`
   for invite-only deployments — `POST {{ '{prefix}' }}/auth/register` then
   returns 403.
+- `EMAILS_ENABLED=true` requires `SMTP_HOST` (rejected at boot otherwise).
 {%- endif %}
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 - Behind a proxy, set `FORWARDED_ALLOW_IPS` so rate limits key on real client

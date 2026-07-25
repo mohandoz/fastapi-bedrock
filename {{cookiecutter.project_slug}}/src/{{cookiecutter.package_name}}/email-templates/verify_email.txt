@@ -1,0 +1,9 @@
+{% raw %}{{ project_name }}
+
+Thanks for signing up. Please confirm your email address to activate your
+account.
+
+Verify it here: {{ link }}
+
+This link expires in {{ expire_minutes }} minutes. If you did not create an
+account, you can safely ignore this email.{% endraw %}

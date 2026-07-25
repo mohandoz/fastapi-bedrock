@@ -46,7 +46,13 @@ def run(*command: str) -> bool:
 
 def prune_disabled_features() -> None:
     if not USE_AUTH:
-        remove(SRC / "domains" / "auth", SRC / "core" / "security.py", "tests/test_auth.py")
+        remove(
+            SRC / "domains" / "auth",
+            SRC / "core" / "security.py",
+            SRC / "core" / "email.py",
+            SRC / "email-templates",
+            "tests/test_auth.py",
+        )
     if not USE_DOCKER:
         # dynamicconfig/ is only consumed by the docker-compose Temporal service.
         remove("Dockerfile", "docker-compose.yml", ".dockerignore", "dynamicconfig")

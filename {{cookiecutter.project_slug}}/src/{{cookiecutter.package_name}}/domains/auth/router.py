@@ -21,6 +21,10 @@ from {{ cookiecutter.package_name }}.domains.auth.dependencies import CurrentUse
 from {{ cookiecutter.package_name }}.domains.auth.models import User
 from {{ cookiecutter.package_name }}.domains.auth.repository import UserRepository
 from {{ cookiecutter.package_name }}.domains.auth.schemas import (
+    EmailVerificationRequest,
+    Message,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     RefreshRequest,
     Token,
     UserCreate,
@@ -68,3 +72,30 @@ async def refresh(data: RefreshRequest, service: ServiceDep) -> Token:
 @router.get("/me", response_model=UserRead)
 async def me(current_user: CurrentUser) -> User:
     return current_user
+
+
+@router.post("/forgot-password", response_model=Message, status_code=status.HTTP_202_ACCEPTED)
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+# Stricter than the global default: each request can trigger an outbound email.
+@limiter.limit("5/minute")
+async def forgot_password(
+    request: Request, data: PasswordResetRequest, service: ServiceDep
+) -> Message:
+{%- else %}
+async def forgot_password(data: PasswordResetRequest, service: ServiceDep) -> Message:
+{%- endif %}
+    await service.request_password_reset(data.email)
+    # Identical response whether or not the account exists (no enumeration).
+    return Message(detail="If the account exists, a password reset email has been sent")
+
+
+@router.post("/reset-password", response_model=Message)
+async def reset_password(data: PasswordResetConfirm, service: ServiceDep) -> Message:
+    await service.reset_password(data.token, data.new_password)
+    return Message(detail="Password updated")
+
+
+@router.post("/verify-email", response_model=Message)
+async def verify_email(data: EmailVerificationRequest, service: ServiceDep) -> Message:
+    await service.verify_email(data.token)
+    return Message(detail="Email address verified")

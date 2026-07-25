@@ -64,6 +64,25 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     # Allow unauthenticated signup via POST /auth/register.
     open_registration: bool = True
+
+    # --- Email (password recovery + verification) ---
+    # With emails_enabled=false (the default) outbound email is logged instead
+    # of sent, so local development never needs an SMTP server.
+    emails_enabled: bool = False
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_tls: bool = True  # STARTTLS
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    # From address for outbound email; falls back to contact_email when unset.
+    emails_from_email: str | None = None
+    # Base URL for links embedded in emails; the frontend routes
+    # /reset-password and /verify-email receive the token query parameter.
+    frontend_url: str = "http://localhost:3000"
+    email_token_expire_minutes: int = 60
+    # Block login until the address is verified; registration then sends a
+    # verification email.
+    require_email_verification: bool = False
 {%- endif %}
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 
@@ -143,6 +162,9 @@ class Settings(BaseSettings):
             if len(self.secret_key) < 32:
                 msg = "SECRET_KEY must be at least 32 characters outside local development."
                 raise ValueError(msg)
+        if self.emails_enabled and not self.smtp_host:
+            msg = "EMAILS_ENABLED requires SMTP_HOST to be configured."
+            raise ValueError(msg)
 {%- endif %}
         if self.is_production:
             if self.debug:
