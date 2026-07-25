@@ -3,6 +3,12 @@
 # below) or with a scheduled CI job that runs autoupdate and opens a PR.
 default_install_hook_types: [pre-commit]
 
+# Vendored docs-UI assets (Swagger UI, ReDoc) are kept byte-for-byte identical
+# to their upstream releases, so no hook may touch them: the minified bundles
+# trip trailing-whitespace/end-of-file-fixer and exceed the
+# check-added-large-files 500 KB limit.
+exclude: ^src/{{ cookiecutter.package_name }}/core/static/
+
 ci:
   # Only used if this repository is enabled on pre-commit.ci.
   autoupdate_schedule: monthly

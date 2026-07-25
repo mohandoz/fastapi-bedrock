@@ -15,6 +15,7 @@ from temporalio.worker import Worker
 from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }}.models import {{ entity_class }}
 from {{ cookiecutter.package_name }}.temporal import activities as activities_module
 from {{ cookiecutter.package_name }}.temporal.activities import process_{{ cookiecutter.first_entity }}_activity
+from {{ cookiecutter.package_name }}.temporal.sandbox import sandbox_runner
 from {{ cookiecutter.package_name }}.temporal.workflows import Process{{ entity_class }}Workflow
 
 
@@ -31,9 +32,7 @@ async def test_process_activity(
 
     # Point the activity's session factory at the test database.
     monkeypatch.setattr(activities_module, "async_session_factory", session_factory)
-    result = await ActivityEnvironment().run(
-        process_{{ cookiecutter.first_entity }}_activity, str(entity_id)
-    )
+    result = await ActivityEnvironment().run(process_{{ cookiecutter.first_entity }}_activity, str(entity_id))
     assert result == f"processed {{ cookiecutter.first_entity }} {entity_id}"
 
 
@@ -50,17 +49,20 @@ async def test_process_workflow_e2e() -> None:
         return f"processed {{ cookiecutter.first_entity }} {entity_id}"
 
     task_queue = f"tq-{uuid.uuid4()}"
-    async with env:
-        async with Worker(
+    async with (
+        env,
+        Worker(
             env.client,
             task_queue=task_queue,
             workflows=[Process{{ entity_class }}Workflow],
             activities=[process_mock],
-        ):
-            result = await env.client.execute_workflow(
-                Process{{ entity_class }}Workflow.run,
-                "abc",
-                id=f"wf-{uuid.uuid4()}",
-                task_queue=task_queue,
-            )
+            workflow_runner=sandbox_runner(),
+        ),
+    ):
+        result = await env.client.execute_workflow(
+            Process{{ entity_class }}Workflow.run,
+            "abc",
+            id=f"wf-{uuid.uuid4()}",
+            task_queue=task_queue,
+        )
     assert result == "processed {{ cookiecutter.first_entity }} abc"

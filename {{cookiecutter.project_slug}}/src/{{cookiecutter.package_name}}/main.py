@@ -7,9 +7,13 @@ import asyncio
 {% endif -%}
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -102,6 +106,40 @@ def generate_unique_route_id(route: APIRoute) -> str:
     return route.name
 
 
+def _install_docs_routes(app: FastAPI) -> None:
+    """Serve /docs and /redoc from the vendored assets in core/static.
+
+    No CDN: the pages load only self-hosted JS/CSS, so they work air-gapped and
+    run under the strict docs CSP set by SecurityHeadersMiddleware. Keep the
+    paths in sync with ``_DOCS_PATHS`` in core/middleware.py.
+    """
+    static_dir = Path(__file__).parent / "core" / "static"
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    openapi_url = app.openapi_url or f"{settings.api_v1_prefix}/openapi.json"
+
+    @app.get("/docs", include_in_schema=False)
+    async def swagger_ui_html() -> HTMLResponse:
+        return get_swagger_ui_html(
+            openapi_url=openapi_url,
+            title=f"{settings.project_name} - Swagger UI",
+            swagger_js_url="/static/swagger-ui-bundle.js",
+            swagger_css_url="/static/swagger-ui.css",
+            swagger_favicon_url="/static/favicon.png",
+            # Bearer-token auth only; the OAuth2 redirect page is not needed.
+            oauth2_redirect_url=None,
+        )
+
+    @app.get("/redoc", include_in_schema=False)
+    async def redoc_html() -> HTMLResponse:
+        return get_redoc_html(
+            openapi_url=openapi_url,
+            title=f"{settings.project_name} - ReDoc",
+            redoc_js_url="/static/redoc.standalone.js",
+            redoc_favicon_url="/static/favicon.png",
+            with_google_fonts=False,  # required by the docs CSP (no external origins)
+        )
+
+
 def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(
@@ -114,9 +152,13 @@ def create_app() -> FastAPI:
         generate_unique_id_function=generate_unique_route_id,
         lifespan=lifespan,
         openapi_url=f"{settings.api_v1_prefix}/openapi.json" if settings.docs_enabled else None,
-        docs_url="/docs" if settings.docs_enabled else None,
-        redoc_url="/redoc" if settings.docs_enabled else None,
+        # /docs and /redoc are served from vendored assets (core/static) by
+        # _install_docs_routes below — no CDN JavaScript on token-handling pages.
+        docs_url=None,
+        redoc_url=None,
     )
+    if settings.docs_enabled:
+        _install_docs_routes(app)
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 
     # Registered FIRST so its middleware sits innermost: 429 responses still

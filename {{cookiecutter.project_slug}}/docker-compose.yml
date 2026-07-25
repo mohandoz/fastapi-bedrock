@@ -62,7 +62,7 @@ services:
           path: ./uv.lock
 
   db:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: postgres
       # Override via POSTGRES_PASSWORD in .env; compose interpolates it here
@@ -156,7 +156,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DB: postgres12 # schema plugin for Postgres 12+ (works with PG17)
+      DB: postgres12 # schema plugin for Postgres 12+ (works with PG18)
       DB_PORT: "5432" # auto-setup default is 3306 — must override
       POSTGRES_SEEDS: db
       POSTGRES_USER: postgres

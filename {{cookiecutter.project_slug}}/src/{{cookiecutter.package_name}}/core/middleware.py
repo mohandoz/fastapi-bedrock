@@ -25,12 +25,37 @@ _BASE_SECURITY_HEADERS = (
     ("X-Content-Type-Options", "nosniff"),
     ("X-Frame-Options", "DENY"),
     ("Referrer-Policy", "no-referrer"),
+    # An API renders no HTML, so the CSP can deny everything; it exists to
+    # neuter reflected content if a response is ever coerced into a document.
+    ("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"),
+    ("Permissions-Policy", "camera=(), microphone=(), geolocation=()"),
+    ("Cross-Origin-Opener-Policy", "same-origin"),
 )
 _HSTS_VALUE = "max-age=63072000; includeSubDomains"
 
+# The Swagger UI / ReDoc pages are HTML served from vendored assets (see
+# core/static/): they need self-hosted scripts and styles, the inline bootstrap
+# <script> FastAPI's docs helpers emit, and — for ReDoc — a blob: web worker.
+# Everything else stays denied; no third-party origin ever loads.
+_DOCS_CSP = (
+    "default-src 'none'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; "
+    "font-src 'self'; connect-src 'self'; worker-src blob:; "
+    "base-uri 'none'; frame-ancestors 'none'"
+)
+# Matched against the raw ASGI scope["path"] — never request.url.path, which
+# is derived from the client-controlled Host header (CVE-2026-48710 "BadHost").
+_DOCS_PATHS = frozenset({"/docs", "/redoc"})
 
-def apply_security_headers(headers: MutableHeaders) -> None:
-    """Set the baseline security headers, keeping any values already present."""
+
+def apply_security_headers(headers: MutableHeaders, *, docs_page: bool = False) -> None:
+    """Set the baseline security headers, keeping any values already present.
+
+    ``docs_page=True`` swaps in the relaxed CSP the self-hosted Swagger UI and
+    ReDoc pages need; every other header stays identical.
+    """
+    if docs_page and "Content-Security-Policy" not in headers:
+        headers["Content-Security-Policy"] = _DOCS_CSP
     for name, value in _BASE_SECURITY_HEADERS:
         if name not in headers:
             headers[name] = value
@@ -99,9 +124,11 @@ class SecurityHeadersMiddleware:
             await self.app(scope, receive, send)
             return
 
+        docs_page = scope["path"] in _DOCS_PATHS
+
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":
-                apply_security_headers(MutableHeaders(scope=message))
+                apply_security_headers(MutableHeaders(scope=message), docs_page=docs_page)
             await send(message)
 
         await self.app(scope, receive, send_with_headers)

@@ -90,10 +90,19 @@ def create_email_token(subject: str | uuid.UUID, token_type: str) -> str:
     return _create_token(str(subject), delta, token_type)
 
 
-def decode_token(token: str) -> dict[str, Any]:
-    """Decode and verify a JWT (signature, expiry, audience and issuer).
+# Every claim _create_token mints is mandatory on the way back in: a token
+# missing any of them (hand-rolled, minted by other software sharing the
+# secret, or pre-hardening) must not verify. `require` checks presence only —
+# exp/iat/aud/iss values are verified by the dedicated options below, and the
+# `type` value is asserted at each call site.
+_REQUIRED_CLAIMS = ["exp", "iat", "sub", "jti", "type", "iss", "aud"]
 
-    Raises ``jwt.PyJWTError`` on failure.
+
+def decode_token(token: str) -> dict[str, Any]:
+    """Decode and verify a JWT (signature, expiry, audience, issuer, claims).
+
+    The algorithm list is pinned to the single configured algorithm — never
+    derived from the token header. Raises ``jwt.PyJWTError`` on failure.
     """
     return jwt.decode(
         token,
@@ -102,4 +111,5 @@ def decode_token(token: str) -> dict[str, Any]:
         audience=settings.jwt_audience,
         issuer=settings.jwt_issuer,
         leeway=JWT_LEEWAY,
+        options={"require": _REQUIRED_CLAIMS},
     )

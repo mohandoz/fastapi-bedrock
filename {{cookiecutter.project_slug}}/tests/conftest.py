@@ -74,7 +74,7 @@ API = settings.api_v1_prefix
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
     """Start one throwaway PostgreSQL container for the whole test session."""
-    with PostgresContainer("postgres:17-alpine", driver="asyncpg") as container:
+    with PostgresContainer("postgres:18-alpine", driver="asyncpg") as container:
         yield str(container.get_connection_url())
 
 

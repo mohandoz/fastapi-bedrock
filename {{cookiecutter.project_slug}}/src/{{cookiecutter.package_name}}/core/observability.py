@@ -9,11 +9,10 @@ match the template's no-magic style.
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from opentelemetry import metrics, trace
-from opentelemetry._logs import set_logger_provider
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -24,8 +23,6 @@ from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.redis import RedisInstrumentor
 {%- endif %}
 from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
-from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -34,6 +31,31 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.database import engine
+
+if TYPE_CHECKING:
+    from opentelemetry.sdk._logs import LoggerProvider
+
+
+def _build_log_pipeline(resource: Resource, base: str) -> LoggerProvider:
+    """Create the OTLP log provider and register it globally.
+
+    The OTel Python logs signal still lives in the pre-stable ``_logs``
+    namespaces, so those imports stay local to this function: if a minor
+    release moves them, the breakage is a one-function fix instead of a
+    module-import failure. The pyproject upper bounds (<2 / <0.70b0) already
+    prevent silent upgrades.
+    """
+    from opentelemetry._logs import set_logger_provider
+    from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+    from opentelemetry.sdk._logs import LoggerProvider
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+
+    logger_provider = LoggerProvider(resource=resource)
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter(endpoint=f"{base}/v1/logs"))
+    )
+    set_logger_provider(logger_provider)
+    return logger_provider
 
 
 def configure_observability(app: FastAPI) -> None:
@@ -74,11 +96,7 @@ def configure_observability(app: FastAPI) -> None:
     metrics.set_meter_provider(meter_provider)
 
     # --- Logs -> Loki (the root-logger handler is attached in the lifespan) ---
-    logger_provider = LoggerProvider(resource=resource)
-    logger_provider.add_log_record_processor(
-        BatchLogRecordProcessor(OTLPLogExporter(endpoint=f"{base}/v1/logs"))
-    )
-    set_logger_provider(logger_provider)
+    logger_provider = _build_log_pipeline(resource, base)
 
     # --- Instrumentation ---
     FastAPIInstrumentor.instrument_app(app)
@@ -107,6 +125,9 @@ def attach_otel_log_handler(app: FastAPI) -> None:
     logger_provider = getattr(app.state, "logger_provider", None)
     if logger_provider is None:  # observability disabled
         return
+    # Pre-stable namespace: keep the import function-local (see _build_log_pipeline).
+    from opentelemetry.sdk._logs import LoggingHandler
+
     logging.getLogger().addHandler(
         LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
     )

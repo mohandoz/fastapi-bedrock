@@ -50,6 +50,31 @@ Production databases need **scheduled dumps and point-in-time recovery**
 (managed Postgres provides both) before this service handles real data —
 `alembic downgrade` is a schema tool, not a recovery path.
 
+## Application hardening notes
+
+- **Never gate auth on the request path in middleware.** Starlette < 1.0.1 let a
+  crafted `Host` header make `request.url.path` lie (BadHost, CVE-2026-48710),
+  turning any `if request.url.path.startswith("/admin")` middleware check into a
+  one-header bypass. This project pins `starlette>=1.0.1`, and its middleware
+  reads the raw ASGI `scope["path"]` — keep both properties if you add
+  middleware. Route-level dependencies (`Depends`) are the supported way to
+  gate access; path-matching middleware is an anti-pattern regardless of the CVE.
+- **Security headers** are attached to every response by
+  `core/middleware.py`: `Content-Security-Policy: default-src 'none'`,
+  `Permissions-Policy`, `Cross-Origin-Opener-Policy`, `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy`, and HSTS in production.
+- **API docs load no third-party JavaScript.** Swagger UI and ReDoc are served
+  from vendored assets in `core/static/` (developers paste live bearer tokens
+  into `/docs`, so CDN-hosted script there is a supply-chain risk — and a hard
+  failure in air-gapped networks). The docs pages run under their own strict
+  CSP; see `core/static/README.md` for the asset update procedure.
+{%- if cookiecutter.use_auth == "yes" %}
+- **JWTs are verified strictly**: pinned algorithm list, issuer + audience
+  binding, and required claims (`exp`, `iat`, `sub`, `jti`, `type`, `iss`,
+  `aud`) — see `core/security.py`. A token minted by any other service sharing
+  the same secret does not verify here.
+{%- endif %}
+
 ## Production posture checklist
 
 Configuration that is unsafe outside local development already fails at boot

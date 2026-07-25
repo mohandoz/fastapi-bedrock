@@ -20,6 +20,7 @@ from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.logging import configure_logging
 from {{ cookiecutter.package_name }}.temporal.activities import process_{{ cookiecutter.first_entity }}_activity
 from {{ cookiecutter.package_name }}.temporal.client import connect_temporal
+from {{ cookiecutter.package_name }}.temporal.sandbox import sandbox_runner
 from {{ cookiecutter.package_name }}.temporal.workflows import Process{{ entity_class }}Workflow
 
 logger = structlog.get_logger(__name__)
@@ -33,6 +34,7 @@ async def main() -> None:
         task_queue=settings.temporal_task_queue,
         workflows=[Process{{ entity_class }}Workflow],
         activities=[process_{{ cookiecutter.first_entity }}_activity],
+        workflow_runner=sandbox_runner(),
         graceful_shutdown_timeout=timedelta(seconds=30),
         # Sync (`def`) activities would also need activity_executor=ThreadPoolExecutor(...).
     )

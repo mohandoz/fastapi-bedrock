@@ -26,6 +26,13 @@ def create_redis_client() -> redis.Redis:
         settings.redis_url,
         max_connections=settings.redis_max_connections,
         decode_responses=True,  # str in/out (JSON cache + string stream fields)
+        # redis-py 8 defaults: RESP3 on the wire, RESP2-compatible Python reply
+        # shapes. Both are set explicitly so a future redis-py default flip
+        # cannot silently change the reply shapes the events/ Streams consumer
+        # (xreadgroup/xautoclaim) parses. Flipping legacy_responses to False is
+        # a deliberate migration: re-run the testcontainers stream tests first.
+        protocol=3,
+        legacy_responses=True,
         health_check_interval=30,
         socket_keepalive=True,
         # Fail fast instead of wedging requests when Redis blackholes (redis-py

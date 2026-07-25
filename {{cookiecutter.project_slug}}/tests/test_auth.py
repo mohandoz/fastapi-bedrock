@@ -291,6 +291,17 @@ async def test_token_without_audience_is_rejected(client: AsyncClient) -> None:
     assert response.status_code == 401
 
 
+def test_token_missing_required_claim_rejected() -> None:
+    payload = {  # no jti/type/iss/aud -> must not verify
+        "sub": "someone",
+        "exp": datetime.now(UTC) + timedelta(minutes=5),
+        "iat": datetime.now(UTC),
+    }
+    token = jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    with pytest.raises(jwt.MissingRequiredClaimError):
+        decode_token(token)
+
+
 async def test_refresh_rejects_access_token(client: AsyncClient) -> None:
     tokens = await _register_and_login(client, "tara@example.com", "supersecret123")
     response = await client.post(

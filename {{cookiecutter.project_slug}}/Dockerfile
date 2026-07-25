@@ -1,13 +1,19 @@
 # syntax=docker/dockerfile:1
 
+# Debian trixie is current stable (bookworm is oldstable with a slower
+# security-update cadence) and the default base for uv's official images.
+#
 # Pin both base images by digest for reproducible builds, e.g.
-#   FROM ghcr.io/astral-sh/uv:python{{ cookiecutter.python_version }}-bookworm-slim@sha256:<digest>
+#   FROM ghcr.io/astral-sh/uv:python{{ cookiecutter.python_version }}-trixie-slim@sha256:<digest>
 # Dependabot's docker ecosystem (.github/dependabot.yml) keeps pinned digests
 # current, so the pin costs nothing to maintain.
-FROM ghcr.io/astral-sh/uv:python{{ cookiecutter.python_version }}-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python{{ cookiecutter.python_version }}-trixie-slim AS builder
 
+# UV_MALWARE_CHECK (uv preview) aborts the build if any locked package matches
+# an OSV malware advisory.
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_MALWARE_CHECK=1 \
     UV_PYTHON_DOWNLOADS=0
 
 WORKDIR /app
@@ -23,7 +29,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev
 
 
-FROM python:{{ cookiecutter.python_version }}-slim-bookworm AS runtime
+FROM python:{{ cookiecutter.python_version }}-slim-trixie AS runtime
 
 LABEL org.opencontainers.image.title="{{ cookiecutter.project_name }}" \
     org.opencontainers.image.description="{{ cookiecutter.project_description }}" \

@@ -8,13 +8,14 @@ repository, service and router.
 
 ## Requirements
 
-- [uv](https://docs.astral.sh/uv/)
+- [uv](https://docs.astral.sh/uv/) >= 0.11 — enforced by `[tool.uv]
+  required-version` in `pyproject.toml` (the `uv_build` backend needs it)
 - Python {{ cookiecutter.python_version }}+ (uv can install it for you)
 {%- if cookiecutter.use_docker == "yes" %}
-- Docker — runs PostgreSQL for local development and the test suite
+- Docker — runs PostgreSQL 18 for local development and the test suite
 {%- else %}
 - PostgreSQL — a running instance for local development (see `DATABASE_URL`)
-- Docker — runs the test suite's throwaway PostgreSQL (testcontainers)
+- Docker — runs the test suite's throwaway PostgreSQL 18 (testcontainers)
 {%- endif %}
 
 ## Quick start
@@ -420,6 +421,10 @@ degrading:
   hostnames (`*` is rejected).
 - `/docs`, `/redoc` and the OpenAPI schema are disabled in production unless
   `DOCS_ENABLED=true` is set explicitly.
+- `/docs` and `/redoc` are fully self-hosted — no CDN assets, so they work
+  air-gapped (see `src/{{ cookiecutter.package_name }}/core/static/README.md`
+  for updating the vendored bundles) — and every response carries
+  CSP, Permissions-Policy and Cross-Origin-Opener-Policy security headers.
 {%- if cookiecutter.use_auth == "yes" %}
 - `OPEN_REGISTRATION` (default `true`) controls public signup; set it to `false`
   for invite-only deployments — `POST {{ '{prefix}' }}/auth/register` then

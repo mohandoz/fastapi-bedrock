@@ -32,6 +32,21 @@ def warn(message: str) -> None:
     print(f"WARNING: {message}", file=sys.stderr)
 
 
+# Free-threaded (no-GIL) builds such as '3.14t': SQLAlchemy's asyncio bridge
+# runs on greenlet, which does not support free-threaded CPython — the
+# interpreter re-enables the GIL (or the greenlet install fails outright),
+# silently defeating the point of choosing 3.14t. Revisit once SQLAlchemy
+# 2.1's free-threading accommodations land.
+_normalized_python = python_version.strip().lower()
+if _normalized_python.endswith("t") or "free-threaded" in _normalized_python:
+    fail(
+        f"python_version '{python_version}' selects a free-threaded (no-GIL) "
+        "build, which this template does not support: SQLAlchemy async "
+        "requires greenlet, and greenlet does not run on free-threaded "
+        "CPython. Use a standard build (e.g. '3.14') and scale with multiple "
+        "uvicorn workers instead."
+    )
+
 # The generated code uses PEP 695 type-parameter syntax (and modern typing),
 # which requires Python 3.12+. Ruff's target-version and mypy's python_version
 # only accept MAJOR.MINOR, so patch-level input (e.g. '3.13.1') is rejected.

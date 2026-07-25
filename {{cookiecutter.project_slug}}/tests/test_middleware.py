@@ -55,8 +55,24 @@ async def test_security_headers_present(light_client: AsyncClient) -> None:
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "no-referrer"
+    assert (
+        response.headers["Content-Security-Policy"]
+        == "default-src 'none'; frame-ancestors 'none'"
+    )
+    assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
+    assert response.headers["Cross-Origin-Opener-Policy"] == "same-origin"
     # HSTS is production-only; the test environment runs as `local`.
     assert "Strict-Transport-Security" not in response.headers
+
+
+async def test_docs_pages_are_self_hosted(light_client: AsyncClient) -> None:
+    for path in ("/docs", "/redoc"):
+        response = await light_client.get(path)
+        assert response.status_code == 200
+        assert "cdn.jsdelivr.net" not in response.text
+        assert "/static/" in response.text
+        csp = response.headers["Content-Security-Policy"]
+        assert "script-src 'self' 'unsafe-inline'" in csp
 
 
 async def test_request_completed_event(

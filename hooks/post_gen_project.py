@@ -130,8 +130,19 @@ def sync_dependencies() -> None:
 
 def initial_commit() -> None:
     run("git", "add", "-A")
+    # --no-verify: bootstrapping the pre-commit hook environments needs network
+    # access and the tree was already ruff-fixed/formatted by sync_dependencies(),
+    # so running the hooks here only makes generation slow and flaky. The hooks
+    # installed above still guard every later commit.
     # Non-fatal: if git has no configured identity the files simply stay staged.
-    run("git", "commit", "-q", "-m", "Initial commit from fastapi-bedrock")
+    run(
+        "git",
+        "commit",
+        "-q",
+        "--no-verify",
+        "-m",
+        "Initial commit from fastapi-bedrock",
+    )
 
 
 def main() -> None:
