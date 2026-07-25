@@ -13,6 +13,7 @@ coverage.xml
 *.sqlite3
 .env*
 tests/
+deploy/
 .dockerignore
 Dockerfile
 docker-compose.yml

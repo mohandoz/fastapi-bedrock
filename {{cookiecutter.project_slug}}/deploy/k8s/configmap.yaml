@@ -1,0 +1,29 @@
+# Non-secret runtime configuration, injected as environment variables via
+# `envFrom` in the Deployment and migration Job. Secrets live in secret.yaml.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ cookiecutter.project_slug }}-config
+  namespace: {{ cookiecutter.project_slug }}
+data:
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  # The probes and the image HEALTHCHECK send `Host: localhost`, so keep
+  # `localhost` in this list next to your public hostname.
+  ALLOWED_HOSTS: api.example.com,localhost
+  CORS_ORIGINS: https://app.example.com
+  # uvicorn trusts X-Forwarded-* from these addresses. "*" is fine while the
+  # pod is only reachable through the ingress; narrow it to the ingress
+  # controller's CIDR otherwise.
+  FORWARDED_ALLOW_IPS: "*"
+{%- if cookiecutter.use_temporal == "yes" %}
+  TEMPORAL_HOST: temporal-frontend.temporal:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TASK_QUEUE: {{ cookiecutter.package_name }}-tq
+{%- endif %}
+{%- if cookiecutter.use_observability == "yes" %}
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: {{ cookiecutter.package_name }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector.observability:4318
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+{%- endif %}

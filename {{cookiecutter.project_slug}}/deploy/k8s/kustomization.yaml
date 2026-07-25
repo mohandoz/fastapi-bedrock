@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: {{ cookiecutter.project_slug }}
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - service.yaml
+  - deployment.yaml
+  - migration-job.yaml
+images:
+  # Point this at your registry once and the Deployment and migration Job both
+  # pick it up. Add `digest: sha256:<digest>` to pin releases immutably.
+  - name: {{ cookiecutter.project_slug }}
+    newName: registry.example.com/{{ cookiecutter.project_slug }}
+    newTag: "{{ cookiecutter.version }}"
