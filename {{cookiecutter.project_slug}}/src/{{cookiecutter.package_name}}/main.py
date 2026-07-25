@@ -19,6 +19,11 @@ from {{ cookiecutter.package_name }}.core.exceptions import add_exception_handle
 {%- if cookiecutter.use_http_client == "yes" %}
 from {{ cookiecutter.package_name }}.core.http import create_http_client
 {%- endif %}
+from {{ cookiecutter.package_name }}.core.limits import (
+    BodySizeLimitMiddleware,
+    RequestTimeoutMiddleware,
+    install_shutdown_drain,
+)
 from {{ cookiecutter.package_name }}.core.logging import configure_logging
 from {{ cookiecutter.package_name }}.core.middleware import (
     RequestIDMiddleware,
@@ -45,6 +50,10 @@ from {{ cookiecutter.package_name }}.core.sentry import init_sentry
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging()
+    # SIGTERM flips app.state.shutting_down so /ready 503s and load balancers
+    # drain us; must run here (not create_app) so uvicorn's own signal handler
+    # is already installed and gets chained.
+    install_shutdown_drain(app)
 {%- if cookiecutter.use_observability == "yes" %}
     # Attach the OTLP log handler AFTER configure_logging() (it reassigns root.handlers).
     attach_otel_log_handler(app)
@@ -99,6 +108,9 @@ def create_app() -> FastAPI:
     add_rate_limiting(app)
 {%- endif %}
 
+    # Innermost of the app-level middleware: 504s from the timeout still pass
+    # through the security-header, CORS and request-id middleware below.
+    app.add_middleware(RequestTimeoutMiddleware, timeout=settings.request_timeout)
     app.add_middleware(SecurityHeadersMiddleware)
     if settings.cors_origins:
         app.add_middleware(
@@ -110,6 +122,8 @@ def create_app() -> FastAPI:
         )
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_hosts)
     app.add_middleware(RequestIDMiddleware)
+    # Outermost: refuse oversized bodies before anything else buffers them.
+    app.add_middleware(BodySizeLimitMiddleware, max_body_size=settings.max_body_size)
 
     add_exception_handlers(app)
 {%- if cookiecutter.use_observability == "yes" %}

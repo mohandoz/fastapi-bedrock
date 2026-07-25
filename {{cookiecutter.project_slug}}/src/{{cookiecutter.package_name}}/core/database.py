@@ -20,6 +20,18 @@ engine = create_async_engine(
     max_overflow=settings.db_max_overflow,
     pool_timeout=settings.db_pool_timeout,
     pool_recycle=settings.db_pool_recycle,
+    connect_args={
+        # asyncpg-specific: bound connection attempts (seconds) and enforce
+        # server-side statement/lock timeouts (Postgres GUCs, milliseconds as
+        # strings) so a stuck query cannot pin a pool slot forever. Alembic
+        # builds its own engine (migrations/env.py), so long-running
+        # migrations are unaffected.
+        "timeout": settings.db_connect_timeout,
+        "server_settings": {
+            "statement_timeout": str(settings.db_statement_timeout_ms),
+            "lock_timeout": str(settings.db_lock_timeout_ms),
+        },
+    },
 )
 
 async_session_factory = async_sessionmaker(

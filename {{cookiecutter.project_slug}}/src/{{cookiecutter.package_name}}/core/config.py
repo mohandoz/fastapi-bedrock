@@ -49,11 +49,24 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
+    # asyncpg connect timeout (seconds); statement/lock timeouts are enforced
+    # server-side by Postgres (GUCs, milliseconds).
+    db_connect_timeout: float = 10.0
+    db_statement_timeout_ms: int = 30_000
+    db_lock_timeout_ms: int = 5_000
     # Create tables via SQLModel.metadata.create_all at startup — a local
     # convenience only. Forced off outside local development unless
     # DB_AUTO_CREATE is set explicitly; deployments apply schema with Alembic
     # (see migrations/README).
     db_auto_create: bool = True
+
+    # --- Runtime limits ---
+    # Reject request bodies above this many bytes with a 413 (default 2 MiB).
+    max_body_size: int = 2_097_152
+    # Cancel non-streaming requests running longer than this (seconds) with a 504.
+    request_timeout: float = 30.0
+    # Budget (seconds) for each dependency check inside the /ready probe.
+    readiness_check_timeout: float = 2.0
 
     # --- CORS / trusted hosts (comma-separated in the environment) ---
     # NoDecode stops pydantic-settings from JSON-decoding these before

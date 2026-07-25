@@ -41,5 +41,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 # Behind a reverse proxy, set FORWARDED_ALLOW_IPS to the proxy address so
 # {% if cookiecutter.use_rate_limiting == "yes" %}rate limiting and {% endif %}request logs see real client IPs
-# (`fastapi run` already passes uvicorn --proxy-headers).
-CMD ["fastapi", "run", "src/{{ cookiecutter.package_name }}/main.py", "--host", "0.0.0.0", "--port", "8000"]
+# (--proxy-headers matches what `fastapi run` passed). --timeout-graceful-shutdown
+# bounds in-flight drain after SIGTERM; keep it below the orchestrator's kill
+# grace period (k8s terminationGracePeriodSeconds defaults to 30s).
+CMD ["uvicorn", "{{ cookiecutter.package_name }}.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--timeout-graceful-shutdown", "20"]

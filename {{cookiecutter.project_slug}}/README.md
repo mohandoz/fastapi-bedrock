@@ -127,9 +127,9 @@ limit multiplies by the worker count, and counters reset on every restart.
 **Behind a reverse proxy or load balancer** the peer address is the proxy's, so
 all clients collapse into one shared bucket unless forwarded headers are
 {%- if cookiecutter.use_docker == "yes" %}
-trusted. The container CMD (`fastapi run`) already passes uvicorn
-`--proxy-headers`; also set `FORWARDED_ALLOW_IPS=<proxy address>` on the
-container so the forwarded header is honored — and only from that proxy.
+trusted. The container CMD already passes uvicorn `--proxy-headers`; also set
+`FORWARDED_ALLOW_IPS=<proxy address>` on the container so the forwarded header
+is honored — and only from that proxy.
 {%- else %}
 trusted. Run uvicorn with `--proxy-headers` and set
 `FORWARDED_ALLOW_IPS=<proxy address>` so the forwarded header is honored — and

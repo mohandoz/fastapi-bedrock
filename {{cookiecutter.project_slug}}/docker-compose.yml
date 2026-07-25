@@ -41,7 +41,10 @@ services:
     # `exec` makes uvicorn PID 1 so SIGTERM reaches it and shutdown is graceful.
     command: >
       sh -c "alembic upgrade head &&
-      exec fastapi run src/{{ cookiecutter.package_name }}/main.py --host 0.0.0.0 --port 8000"
+      exec uvicorn {{ cookiecutter.package_name }}.main:app --host 0.0.0.0 --port 8000
+      --proxy-headers --timeout-graceful-shutdown 20"
+    # Compose defaults to 10s before SIGKILL — too short for the 20s uvicorn drain.
+    stop_grace_period: 30s
 
   db:
     image: postgres:17-alpine
