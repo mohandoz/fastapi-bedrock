@@ -4,3 +4,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Wait for releases to age before PR-ing them (security updates bypass
+    # cooldown) — defends against compromised-release waves.
+    cooldown:
+      default-days: 7
+      semver-patch-days: 3

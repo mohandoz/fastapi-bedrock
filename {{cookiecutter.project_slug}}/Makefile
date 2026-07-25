@@ -1,4 +1,10 @@
 .DEFAULT_GOAL := help
+
+# Malware gate (uv preview feature): every uv command that syncs the
+# environment queries the OSV malware feed and aborts before a
+# known-malicious package can execute. Opt out per-invocation with
+# UV_MALWARE_CHECK=0.
+export UV_MALWARE_CHECK ?= 1
 .PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade new-domain seed loadtest openapi clean{% if cookiecutter.use_llm_example == "yes" %} evals{% endif %}{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down db-backup db-restore{% endif %}
 
 help: ## Show this help
@@ -66,9 +72,12 @@ typecheck: ## Run mypy
 
 check: lint typecheck test ## Run every check (lint, types, tests)
 
+# `uv audit` (OSV-backed, currently a uv preview feature) scans
+# pyproject.toml + uv.lock natively — no requirements-txt export needed —
+# and exits non-zero on findings. Swap in `uvx pip-audit` only if SARIF
+# output is ever required.
 audit: ## Scan locked dependencies for known vulnerabilities
-	uv export --no-emit-project --format requirements-txt -o .audit-requirements.txt
-	uvx pip-audit -r .audit-requirements.txt; status=$$?; rm -f .audit-requirements.txt; exit $$status
+	uv audit
 
 precommit: ## Run all pre-commit hooks against every file
 	uv run pre-commit run --all-files
@@ -101,7 +110,7 @@ openapi: ## Export the OpenAPI schema to openapi.json
 	uv run {{ cookiecutter.project_slug }} openapi-export
 
 clean: ## Remove caches and build artefacts
-	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build .audit-requirements.txt
+	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build
 	find . -type d -name __pycache__ -exec rm -rf {} +
 {%- if cookiecutter.use_docker == "yes" %}
 

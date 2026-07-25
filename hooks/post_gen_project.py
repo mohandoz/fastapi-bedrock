@@ -57,7 +57,8 @@ def prune_disabled_features() -> None:
             "docs/recipes/oauth-social-login.md",
         )
     if not USE_DOCKER:
-        # dynamicconfig/ is only consumed by the docker-compose Temporal service.
+        # dynamicconfig/ is only consumed by the docker-compose Temporal service;
+        # release.yml publishes the Docker image to GHCR.
         remove(
             "Dockerfile",
             "docker-compose.yml",
@@ -65,6 +66,7 @@ def prune_disabled_features() -> None:
             "dynamicconfig",
             "deploy",
             ".devcontainer/compose.yml",
+            ".github/workflows/release.yml",
         )
     if not USE_CI:
         # Keep dependabot.yml, the PR template and bedrock-mark.svg — only the

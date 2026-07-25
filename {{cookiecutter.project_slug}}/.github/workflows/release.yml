@@ -1,0 +1,131 @@
+{% raw -%}
+# Release: build the Docker image, push it to GHCR and attach verifiable
+# supply-chain metadata — BuildKit SLSA build provenance + SBOM attestations
+# (SLSA v1 Build L2) plus a Sigstore-signed attestation in GitHub's
+# attestation store.
+#
+# Trigger: push a semver tag, e.g. `git tag v1.2.3 && git push origin v1.2.3`.
+#
+# Required repository settings:
+#   - Settings -> Actions -> General -> Workflow permissions can stay
+#     read-only: this job requests its elevated scopes
+#     (packages / id-token / attestations) explicitly below.
+#   - The GHCR package is created on the first push, is PRIVATE by default
+#     and is linked to this repository. Adjust visibility / pull access under
+#     the package's "Package settings" after the first release.
+#   - Artifact attestations are free for public repositories; private and
+#     internal repositories require GitHub Enterprise Cloud with Artifact
+#     Attestations. Without it, remove the "Attest build provenance" step or
+#     switch to the keyless-cosign fallback commented at the bottom.
+#
+# Verify a published image:
+#   gh attestation verify oci://ghcr.io/OWNER/REPO:TAG -R OWNER/REPO
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write       # push the image to GHCR
+      id-token: write       # Sigstore keyless signing via the run's OIDC identity
+      attestations: write   # store the provenance attestation
+    steps:
+      # Egress allowlist: everything this job legitimately talks to. If a
+      # release fails on a blocked call, check the harden-runner step summary
+      # for the offending endpoint and extend the list (or temporarily set
+      # `egress-policy: audit`). Note: harden-runner's community tier covers
+      # public repositories; on a private repository without a StepSecurity
+      # plan, remove this step.
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudflare.docker.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            fulcio.githubapp.com:443
+            timestamp.githubapp.com:443
+            tuf-repo.github.com:443
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Registry namespaces must be lowercase; github.repository may not be.
+      - name: Compute image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # BuildKit-generated SLSA provenance and SBOM, pushed alongside the
+          # image manifest.
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Sigstore-signed provenance in GitHub's attestation store, verifiable
+      # offline-of-CI with `gh attestation verify` (see header). Moving the
+      # build into a reusable workflow would upgrade this to SLSA Build L3.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      # Keyless-cosign fallback for repositories without GitHub artifact
+      # attestations (e.g. private repos off GHEC). The resulting signature
+      # pairs with a Kyverno `verifyImages` admission policy in-cluster.
+      # - name: Install cosign
+      #   uses: sigstore/cosign-installer@v3
+      # - name: Sign image (Sigstore keyless)
+      #   run: cosign sign --yes ${{ steps.image.outputs.name }}@${{ steps.build.outputs.digest }}
+{%- endraw %}

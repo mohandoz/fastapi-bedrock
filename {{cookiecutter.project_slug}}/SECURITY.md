@@ -75,6 +75,36 @@ Production databases need **scheduled dumps and point-in-time recovery**
   the same secret does not verify here.
 {%- endif %}
 
+## Supply-chain security
+
+- **Install-time malware gate** — the Makefile{% if cookiecutter.use_github_actions == "yes" %}, CI{% endif %}{% if cookiecutter.use_docker == "yes" %} and the Docker build{% endif %} set
+  `UV_MALWARE_CHECK=1` (uv preview feature): every `uv sync`/`uv add` checks
+  the OSV malware feed and aborts before a known-malicious package can run.
+- **Dependency audit** — `make audit` runs `uv audit` (OSV-backed) against the
+  committed `uv.lock`{% if cookiecutter.use_github_actions == "yes" %}, and CI runs it on every push and pull request{% endif %}.
+- **Update cooldowns** — `.github/dependabot.yml` waits 7 days (3 for patch
+  releases) before proposing a newly published version, riding out
+  compromised-release waves; Dependabot security updates bypass the cooldown.
+{%- if cookiecutter.use_github_actions == "yes" %}
+- **PR dependency review** — `actions/dependency-review-action` blocks pull
+  requests that introduce dependencies with known vulnerabilities or
+  OSV-flagged malware (see the job comment in `.github/workflows/ci.yml`).
+- **Static analysis** — CodeQL Python taint tracking runs on every push/PR
+  and weekly (`.github/workflows/codeql.yml`).
+- **PEP 751 lockfile** — CI publishes `pylock.toml` as a build artifact for
+  compliance tooling and pip-only consumers; `uv.lock` stays the source of
+  truth.
+{%- if cookiecutter.use_docker == "yes" %}
+- **Verifiable releases** — `.github/workflows/release.yml` pushes images to
+  GHCR with SLSA build provenance and SBOM attestations plus a
+  Sigstore-signed attestation. Verify a published image with:
+  `gh attestation verify oci://ghcr.io/OWNER/REPO:TAG -R OWNER/REPO`.
+{%- endif %}
+{%- endif %}
+- **Repository settings** — enable secret scanning **and push protection**
+  (Settings → Advanced Security){% if cookiecutter.use_github_actions == "yes" %}; the CI gitleaks job additionally scans the
+  full git history{% endif %}.
+
 ## Production posture checklist
 
 Configuration that is unsafe outside local development already fails at boot

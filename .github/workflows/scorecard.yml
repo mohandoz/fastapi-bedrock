@@ -1,0 +1,57 @@
+# OpenSSF Scorecard: continuously scores this repository's supply-chain
+# posture (pinned dependencies, token permissions, branch protection, SAST,
+# dangerous workflow patterns, ...) and regression-tests the hardening the
+# workflows here implement.
+#
+# publish_results: true pushes the score to the public Scorecard API, which
+# powers the README badge:
+#   https://api.scorecard.dev/projects/github.com/<org>/fastapi-bedrock/badge
+# Publishing only works on public repositories and needs id-token: write
+# (OIDC proof the result came from this workflow) — no extra secrets.
+name: Scorecard
+
+on:
+  # Re-score when branch protection changes — it is a scored signal.
+  branch_protection_rule:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "37 5 * * 2"
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: scorecard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write  # upload the SARIF results to code scanning
+      id-token: write         # required for publish_results
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Run Scorecard analysis
+        uses: ossf/scorecard-action@v2.4.4
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          publish_results: true
+
+      - name: Upload SARIF to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: results.sarif

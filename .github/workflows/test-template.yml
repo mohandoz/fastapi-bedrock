@@ -29,19 +29,29 @@ jobs:
               use_auth=yes use_docker=yes use_github_actions=yes
               use_rate_limiting=yes use_sentry=yes use_temporal=yes
               use_redis=yes use_observability=yes use_http_client=yes
+              use_mcp=yes use_llm_example=yes
             run-tests: true
           - variant: all-off
             overrides: >-
               use_auth=no use_docker=no use_github_actions=no
               use_rate_limiting=no use_sentry=no use_temporal=no
               use_redis=no use_observability=no use_http_client=no
+              use_mcp=no use_llm_example=no
           - variant: mixed
             overrides: >-
               use_auth=yes use_docker=yes use_rate_limiting=yes
               use_github_actions=no use_sentry=no use_temporal=no
               use_redis=no use_observability=no use_http_client=no
+              use_mcp=no use_llm_example=no
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -92,7 +102,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v6
@@ -111,9 +128,11 @@ jobs:
           cases=(
             "first_entity=class"
             "first_entity=auth"
+            "first_entity=mcp"
             "first_entity=Item"
             "python_version=3.11"
             "python_version=3.13.1"
+            "python_version=3.14t"
           )
           for case in "${cases[@]}"; do
             if uvx cookiecutter . --no-input --output-dir reject "$case"; then
