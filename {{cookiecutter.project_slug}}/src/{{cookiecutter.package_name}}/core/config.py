@@ -167,6 +167,19 @@ class Settings(BaseSettings):
     http_breaker_failure_threshold: int = 5
     http_breaker_reset_timeout: float = 30.0
 {%- endif %}
+{%- if cookiecutter.use_llm_example == "yes" %}
+
+    # --- LLM (Anthropic) ---
+    # When unset the SDK falls back to the ANTHROPIC_API_KEY environment
+    # variable (or an `ant auth login` profile).
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-opus-4-8"
+    llm_max_tokens: int = 16000
+    # SDK-level per-request timeout (seconds) and retry budget; see
+    # domains/llm/service.py for why these are not core/http.py settings.
+    llm_timeout: float = 60.0
+    llm_max_retries: int = 3
+{%- endif %}
 
     @property
     def is_production(self) -> bool:

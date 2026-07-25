@@ -26,6 +26,11 @@ dependencies = [
 {%- if cookiecutter.use_mcp == "yes" %}
     "fastmcp>=3,<4",
 {%- endif %}
+{%- if cookiecutter.use_llm_example == "yes" %}
+    # >=0.77: first release with the non-beta client.messages.parse() and
+    # output_config-based structured outputs used by domains/llm.
+    "anthropic>=0.77",
+{%- endif %}
 {%- if cookiecutter.use_auth == "yes" %}
     "pyjwt>=2.9",
     "pwdlib[argon2]>=0.2",
@@ -92,6 +97,10 @@ dev = [
     "httpx>=0.28,<1.0",
     "pre-commit>=4.0",
     "pytest-randomly>=4",
+{%- if cookiecutter.use_llm_example == "yes" %}
+    # Offline-marked eval harness for the llm domain (tests/test_llm_evals.py).
+    "pydantic-evals>=2.18",
+{%- endif %}
     "testcontainers[postgres{% if cookiecutter.use_redis == "yes" %},redis{% endif %}]>=4.15",
 ]
 
@@ -171,7 +180,10 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
-addopts = "-ra --strict-markers --cov={{ cookiecutter.package_name }} --cov-report=term-missing"
+{%- if cookiecutter.use_llm_example == "yes" %}
+markers = ["evals: live LLM evals against the Anthropic API (need ANTHROPIC_API_KEY; run with -m evals)"]
+{%- endif %}
+addopts = "-ra --strict-markers{% if cookiecutter.use_llm_example == 'yes' %} -m 'not evals'{% endif %} --cov={{ cookiecutter.package_name }} --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["src/{{ cookiecutter.package_name }}"]

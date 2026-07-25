@@ -18,6 +18,7 @@
     "use_observability": ["no", "yes"],
     "use_http_client": ["no", "yes"],
     "use_mcp": ["no", "yes"],
+    "use_llm_example": ["no", "yes"],
     "_copy_without_render": [
         ".github/workflows/ci.yml",
         "*.mako",

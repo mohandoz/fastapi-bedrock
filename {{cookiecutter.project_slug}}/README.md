@@ -47,6 +47,9 @@ src/{{ cookiecutter.package_name }}/
     auth/              # users, JWT login/refresh, current-user dependencies
 {%- endif %}
     {{ cookiecutter.first_entity }}/               # models · schemas · repository · service · router
+{%- if cookiecutter.use_llm_example == "yes" %}
+    llm/               # Anthropic completions: structured output + SSE streaming
+{%- endif %}
 {%- if cookiecutter.use_temporal == "yes" %}
   temporal/            # Temporal client, worker, workflows, activities
 {%- endif %}
@@ -79,6 +82,9 @@ make new-domain  Scaffold a domain slice:  make new-domain name=order
 make seed        Seed the local database with demo data
 make loadtest    Run the k6 load test:  BASE_URL=... make loadtest
 make openapi     Export the OpenAPI schema to openapi.json
+{%- if cookiecutter.use_llm_example == "yes" %}
+make evals       Run live LLM evals (needs ANTHROPIC_API_KEY)
+{%- endif %}
 {%- if cookiecutter.use_temporal == "yes" %}
 make worker      Run the Temporal worker
 {%- endif %}
@@ -356,6 +362,34 @@ Retries fire on network errors and 5xx (not 4xx); the breaker fails fast once a
 downstream is consistently failing. With observability enabled, outbound calls
 propagate the current trace context automatically.
 {% endif %}
+{% if cookiecutter.use_llm_example == "yes" -%}
+## LLM endpoints (Anthropic)
+
+`domains/llm/` is a vertical slice over the official Anthropic SDK:
+
+- `POST {{ '{prefix}' }}/llm/complete` — structured output: the SDK's
+  `messages.parse` constrains generation to the `Completion` schema and
+  returns the validated instance plus token usage.
+- `POST {{ '{prefix}' }}/llm/stream` — Server-Sent Events via FastAPI's native
+  `EventSourceResponse`: `delta` events carry text increments, one terminal
+  `done` event carries the stop reason and usage, and upstream failures after
+  the stream starts arrive as an in-band `error` event.
+
+Set `ANTHROPIC_API_KEY` (or leave it empty to use the SDK's own credential
+resolution) and pick the model with `ANTHROPIC_MODEL`. The SDK is deliberately
+not routed through a shared HTTP wrapper: it ships its own retries and
+timeouts (`LLM_MAX_RETRIES`, `LLM_TIMEOUT`) — see `domains/llm/service.py`.
+{%- if cookiecutter.use_auth == "yes" %}
+Both routes require a valid access token.
+{%- endif %}
+
+Testing is two-tier: `tests/test_llm.py` fakes the SDK client (deterministic,
+runs in CI — including a regression test that the request-timeout middleware
+never kills an SSE stream mid-flight), while `make evals` runs a small
+[pydantic-evals](https://ai.pydantic.dev/evals/) dataset (deterministic checks
+plus an `LLMJudge`) against the live API — opt-in because it costs money.
+
+{% endif -%}
 {% if cookiecutter.use_mcp == "yes" -%}
 ## MCP (AI agents)
 

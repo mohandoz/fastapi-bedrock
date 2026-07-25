@@ -25,6 +25,7 @@ USE_TEMPORAL = "{{ cookiecutter.use_temporal }}" == "yes"
 USE_REDIS = "{{ cookiecutter.use_redis }}" == "yes"
 USE_OBSERVABILITY = "{{ cookiecutter.use_observability }}" == "yes"
 USE_MCP = "{{ cookiecutter.use_mcp }}" == "yes"
+USE_LLM_EXAMPLE = "{{ cookiecutter.use_llm_example }}" == "yes"
 
 
 def fail(message: str) -> None:
@@ -123,4 +124,11 @@ if USE_MCP and not USE_AUTH:
         "use_mcp=yes with use_auth=no: the MCP endpoint at /mcp is served "
         "without bearer-token verification. Do not expose it publicly without "
         "adding authentication."
+    )
+
+if USE_LLM_EXAMPLE and not USE_AUTH:
+    warn(
+        "use_llm_example=yes with use_auth=no: the /llm endpoints proxy a "
+        "metered, paid API without authentication. Do not expose them "
+        "publicly without adding authentication or strict rate limits."
     )
