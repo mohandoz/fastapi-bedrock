@@ -46,5 +46,17 @@ class PasswordResetConfirm(SQLModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordChange(SQLModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class EmailVerificationRequest(SQLModel):
     token: str
+
+
+class UserExport(SQLModel):
+    """Everything the service stores about an account (GDPR data portability)."""
+
+    user: UserRead
+    exported_at: datetime

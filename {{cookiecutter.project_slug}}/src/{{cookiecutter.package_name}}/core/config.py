@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator, model_validator
 {% if cookiecutter.use_auth == "yes" -%}
+from pydantic import EmailStr, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 DEFAULT_SECRET_KEY = "change-me-to-a-long-random-secret"  # noqa: S105
 {%- else -%}
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 {%- endif %}
 
@@ -19,6 +21,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
+        # File-mounted secrets (Docker secrets, k8s Secret volumes): each file at
+        # /run/secrets/<field_name> supplies that setting (see SECURITY.md).
+        secrets_dir="/run/secrets" if Path("/run/secrets").is_dir() else None,
         case_sensitive=False,
         extra="ignore",
     )
@@ -82,6 +87,13 @@ class Settings(BaseSettings):
     refresh_token_expire_days: int = 7
     # Allow unauthenticated signup via POST /auth/register.
     open_registration: bool = True
+    # JWT audience/issuer binding — tokens minted here are rejected by any
+    # other service that shares the same SECRET_KEY.
+    jwt_issuer: str = "{{ cookiecutter.package_name }}"
+    jwt_audience: str = "{{ cookiecutter.package_name }}"
+    # Superuser account created (or promoted) at startup when both are set.
+    first_superuser_email: EmailStr | None = None
+    first_superuser_password: str | None = None
 
     # --- Email (password recovery + verification) ---
     # With emails_enabled=false (the default) outbound email is logged instead
@@ -180,6 +192,9 @@ class Settings(BaseSettings):
             if len(self.secret_key) < 32:
                 msg = "SECRET_KEY must be at least 32 characters outside local development."
                 raise ValueError(msg)
+        if bool(self.first_superuser_email) != bool(self.first_superuser_password):
+            msg = "FIRST_SUPERUSER_EMAIL and FIRST_SUPERUSER_PASSWORD must be set together."
+            raise ValueError(msg)
         if self.emails_enabled and not self.smtp_host:
             msg = "EMAILS_ENABLED requires SMTP_HOST to be configured."
             raise ValueError(msg)
