@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade new-domain seed clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down db-backup db-restore{% endif %}
+.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade new-domain seed openapi clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down db-backup db-restore{% endif %}
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -87,6 +87,9 @@ new-domain: ## Scaffold a domain slice: make new-domain name=order
 
 seed: ## Seed the local database with demo data (idempotent, local only)
 	uv run python scripts/seed.py
+
+openapi: ## Export the OpenAPI schema to openapi.json
+	uv run {{ cookiecutter.project_slug }} openapi-export
 
 clean: ## Remove caches and build artefacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build .audit-requirements.txt

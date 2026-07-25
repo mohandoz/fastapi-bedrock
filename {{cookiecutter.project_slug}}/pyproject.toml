@@ -15,6 +15,7 @@ dependencies = [
     "alembic>=1.13",
     "asyncpg>=0.30",
     "structlog>=24.4",
+    "typer>=0.15",
 {%- if cookiecutter.use_auth == "yes" %}
     "pyjwt>=2.9",
     "pwdlib[argon2]>=0.2",
@@ -48,6 +49,9 @@ dependencies = [
     "opentelemetry-instrumentation-httpx>=0.65b0",
 {%- endif %}
 ]
+
+[project.scripts]
+{{ cookiecutter.project_slug }} = "{{ cookiecutter.package_name }}.cli:app"
 
 [dependency-groups]
 dev = [

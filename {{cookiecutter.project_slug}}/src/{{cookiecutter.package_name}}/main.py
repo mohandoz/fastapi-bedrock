@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -94,6 +95,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
 
 
+def generate_unique_route_id(route: APIRoute) -> str:
+    """Tag-based operation IDs (e.g. ``items-list_items``) so generated clients get clean method names."""
+    if route.tags:
+        return f"{route.tags[0]}-{route.name}"
+    return route.name
+
+
 def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(
@@ -103,6 +111,7 @@ def create_app() -> FastAPI:
         contact={"name": settings.contact_name, "email": settings.contact_email},
         license_info={"name": "MIT", "identifier": "MIT"},
         debug=settings.debug,
+        generate_unique_id_function=generate_unique_route_id,
         lifespan=lifespan,
         openapi_url=f"{settings.api_v1_prefix}/openapi.json" if settings.docs_enabled else None,
         docs_url="/docs" if settings.docs_enabled else None,

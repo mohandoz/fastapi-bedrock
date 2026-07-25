@@ -76,6 +76,7 @@ make migrate     Apply database migrations
 make revision    Create a migration:  make revision m="message"
 make new-domain  Scaffold a domain slice:  make new-domain name=order
 make seed        Seed the local database with demo data
+make openapi     Export the OpenAPI schema to openapi.json
 {%- if cookiecutter.use_temporal == "yes" %}
 make worker      Run the Temporal worker
 {%- endif %}
@@ -87,6 +88,22 @@ make db-up       Start only PostgreSQL (pairs with `make run`)
 make docker-up   Build and run the full stack (api + PostgreSQL)
 {%- endif %}
 ```
+
+## CLI
+
+The package installs a `{{ cookiecutter.project_slug }}` console script for
+operational tasks:
+
+```bash
+uv run {{ cookiecutter.project_slug }} --help
+```
+
+{% if cookiecutter.use_auth == "yes" -%}
+- `createsuperuser` — create a verified superuser, or promote an existing user
+{% endif -%}
+- `migrate` — Alembic passthrough (defaults to `upgrade head`)
+- `seed` — seed the local database with demo data
+- `openapi-export` — write `openapi.json` without starting the server
 
 ## Error format
 
