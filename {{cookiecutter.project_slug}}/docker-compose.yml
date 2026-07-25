@@ -45,6 +45,21 @@ services:
       --proxy-headers --timeout-graceful-shutdown 20"
     # Compose defaults to 10s before SIGKILL — too short for the 20s uvicorn drain.
     stop_grace_period: 30s
+    # `docker compose watch` (or `up --watch`, Compose v2.22+): code changes
+    # sync into the running container and restart uvicorn (which also re-runs
+    # `alembic upgrade head`); dependency changes rebuild the image.
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./src
+          target: /app/src
+        - action: sync+restart
+          path: ./migrations
+          target: /app/migrations
+        - action: rebuild
+          path: ./pyproject.toml
+        - action: rebuild
+          path: ./uv.lock
 
   db:
     image: postgres:17-alpine

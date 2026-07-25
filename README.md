@@ -26,7 +26,7 @@ Docker and CI — nothing to bolt on afterwards.
 
 | Concern             | Choice                                                             |
 | ------------------- | ----------------------------------------------------------------- |
-| Language            | Python 3.12+ (defaults to 3.13)                                   |
+| Language            | Python 3.12 / 3.13 / 3.14 (defaults to 3.13)                      |
 | Packaging / env     | [uv](https://docs.astral.sh/uv/) (PEP 621 + PEP 735)             |
 | Web framework       | [FastAPI](https://fastapi.tiangolo.com/) (`fastapi[standard]`)    |
 | Data / ORM          | [SQLModel](https://sqlmodel.tiangolo.com/) on SQLAlchemy 2.0 async — PostgreSQL / asyncpg |
@@ -121,7 +121,7 @@ generation finishes the hook initialises a fresh git repository and runs
 | `author_name`         | Your name                                 | —                     |
 | `author_email`        | Your email                                | —                     |
 | `version`             | Initial version                           | `0.1.0`               |
-| `python_version`      | Target Python                             | `3.13`                |
+| `python_version`      | Target Python (`3.13` / `3.14` / `3.12`)  | `3.13`                |
 | `first_entity`        | First domain entity (lowercase snake)     | `item`                |
 | `use_auth`            | Include JWT authentication                | `yes`                 |
 | `use_docker`          | Include Dockerfile + docker-compose       | `yes`                 |

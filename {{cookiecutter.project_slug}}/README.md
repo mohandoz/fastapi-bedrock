@@ -222,6 +222,10 @@ This starts the API against a PostgreSQL container and applies migrations on boo
 All published ports bind to `127.0.0.1` only; setting `POSTGRES_PASSWORD` in
 `.env` overrides the local PostgreSQL password across the whole compose stack.
 
+`docker compose watch` (or `up --watch`) gives an edit-and-reload loop inside
+Docker: changes to `src/` and `migrations/` sync into the api container and
+restart uvicorn; `pyproject.toml` / `uv.lock` changes rebuild the image.
+
 Back up the local database with `make db-backup` (writes
 `backups/<timestamp>.dump`) and restore with
 `make db-restore f=backups/<file>.dump` — `make docker-down` removes the
@@ -363,6 +367,22 @@ repository, service, router) plus `tests/test_order.py`, mirroring the
 lines to add (API router, `_import_models`, `migrations/env.py`). Fill the
 local database with demo data via `make seed`.
 
+## Recipes
+
+`docs/recipes/` holds integration guides written against this codebase:
+
+- [Background work: which tool?](docs/recipes/background-jobs.md) —
+  `BackgroundTasks` vs the transactional outbox vs Temporal, with a decision
+  table and one example each. Read it before adding any async work.
+{%- if cookiecutter.use_auth == "yes" %}
+- [Social login (OAuth / OIDC) with Authlib](docs/recipes/oauth-social-login.md)
+{%- endif %}
+- [Admin back-office with SQLAdmin](docs/recipes/admin-sqladmin.md)
+- [Feature flags with OpenFeature](docs/recipes/feature-flags-openfeature.md)
+
+`.python-version` pins the interpreter (uv reads it directly); mise users can
+copy `docs/mise.toml.example` to `mise.toml` for the same pins.
+
 ## Editor / dev container
 
 `.devcontainer/` runs the project in VS Code Dev Containers or GitHub
@@ -426,6 +446,22 @@ is navigable once you have read one. Schemas are named for intent —
 where mistakes cost most: the generic `BaseRepository[Model]`, the service
 boundaries, and the request/response schemas Pydantic v2 validates at the edges.
 Prefer making illegal states unrepresentable over defensive `if`s.
+
+**Tooling.** `make` over `just`: preinstalled everywhere (dev machines, CI,
+containers) and these targets stay inside the portable subset — a task runner
+nobody has to install beats a nicer one somebody must. `uvicorn` over
+`granian`: its operational surface (`--proxy-headers`,
+`--timeout-graceful-shutdown`, `FORWARDED_ALLOW_IPS`) is battle-tested{% if cookiecutter.use_docker == "yes" %} and is
+what the Dockerfile, compose file and k8s manifests are tuned around{% endif %}; revisit
+only if profiling shows the ASGI server itself is the bottleneck.
+`mypy --strict` over `ty`: mypy is the reference checker and the pydantic
+plugin depends on it; `ty` is tracked as a likely drop-in speedup once stable.
+
+**Pagination.** Offset/limit with a deterministic `ORDER BY` is the default —
+simple, stateless, and fine at the row counts most listing endpoints see. The
+upgrade path is keyset (cursor) pagination per repository once a table grows
+past what `OFFSET` scans tolerate; `BaseRepository.list` documents the
+override point.
 
 **Dependencies.** Managed with `uv`; runtime and dev groups are separated and the
 resolved `uv.lock` is committed for reproducible installs.
