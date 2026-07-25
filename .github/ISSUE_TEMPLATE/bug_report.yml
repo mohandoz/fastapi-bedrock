@@ -1,0 +1,95 @@
+name: Template bug report
+description: >-
+  Something in fastapi-bedrock itself is broken — generation fails, or a
+  freshly generated project is defective out of the box.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report! Two quick routing checks first:
+
+        - If the problem appeared **after you modified** your generated
+          project, or you are unsure whether the template caused it, please
+          open a [Discussion](https://github.com/mohandoz/fastapi-bedrock/discussions) instead.
+        - Security issues: use [private vulnerability reporting](https://github.com/mohandoz/fastapi-bedrock/security/advisories/new), never a public issue.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Also say what you expected to happen instead.
+      placeholder: Generation failed with… / The generated project fails `make check` with…
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact generation command
+      description: >-
+        The full command including every override, or the answers you gave at
+        the prompts. This is the single most useful field.
+      render: shell
+      placeholder: |
+        uvx cruft create gh:mohandoz/fastapi-bedrock
+        # answers: python_version=3.13, use_auth=yes, use_redis=yes, everything else default
+    validations:
+      required: true
+  - type: input
+    id: template-version
+    attributes:
+      label: Template version
+      description: >-
+        A tag or commit SHA. With cruft, it is the `commit` field in your
+        project's `.cruft.json`.
+      placeholder: "v0.3.0 or 4a873da"
+    validations:
+      required: true
+  - type: dropdown
+    id: generator
+    attributes:
+      label: Generated with
+      options:
+        - cruft
+        - cookiecutter
+      default: 0
+    validations:
+      required: true
+  - type: dropdown
+    id: python-version
+    attributes:
+      label: Python version
+      options:
+        - "3.13"
+        - "3.14"
+        - "3.12"
+      default: 0
+    validations:
+      required: true
+  - type: checkboxes
+    id: flags
+    attributes:
+      label: Enabled feature flags
+      description: Tick every `use_*` flag you answered `yes` to.
+      options:
+        - label: use_auth
+        - label: use_docker
+        - label: use_github_actions
+        - label: use_rate_limiting
+        - label: use_sentry
+        - label: use_temporal
+        - label: use_redis
+        - label: use_observability
+        - label: use_http_client
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15 / Ubuntu 24.04 / Windows 11 + WSL2
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: >-
+        Full traceback or failing command output. Automatically formatted as
+        code — no backticks needed.
+      render: text

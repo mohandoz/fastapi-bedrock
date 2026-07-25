@@ -1,1 +1,1 @@
-"""Authentication domain: users, password login and JWT tokens."""
+"""Authentication domain: users, JWT login/refresh rotation, email flows and account lifecycle."""

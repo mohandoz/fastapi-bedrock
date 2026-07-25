@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+# UV_MALWARE_CHECK (uv preview feature) makes every uv command that syncs the
+# environment query the OSV malware feed and abort before a known-malicious
+# package can execute — the install-time complement to the `uv audit` job.
+env:
+  UV_MALWARE_CHECK: "1"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -13,15 +22,28 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
 
       - name: Install Python
         run: uv python install
+
+      - name: Ensure uv.lock is committed
+        run: |
+          if [ ! -f uv.lock ]; then
+            uv lock
+            echo "::error file=uv.lock::uv.lock is missing from the repository. Run 'uv lock' locally and commit the file — CI and the Docker build require a committed lockfile."
+            exit 1
+          fi
+
+      - name: Check uv.lock is up to date
+        run: uv lock --check
 
       - name: Install dependencies
         run: uv sync --locked --dev
@@ -37,3 +59,87 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        run: uv python install
+
+      # `make audit` runs `uv audit` (OSV-backed, currently a uv preview
+      # feature): it reads pyproject.toml + uv.lock natively, so no
+      # requirements-txt export is needed.
+      - name: Audit dependencies for known vulnerabilities
+        run: make audit
+
+      # PEP 751 standardized lockfile: pip >= 25.1 installs directly from it,
+      # giving compliance tooling and uv-less consumers a hash-pinned view.
+      # Published as a build artifact, not committed — uv.lock remains the
+      # single source of truth.
+      - name: Export PEP 751 lockfile (pylock.toml)
+        run: uv export --locked --no-dev --no-emit-project --format pylock.toml -o pylock.toml
+
+      - name: Upload pylock.toml
+        uses: actions/upload-artifact@v7
+        with:
+          name: pylock
+          path: pylock.toml
+
+  # Blocks PRs that introduce dependencies with known vulnerabilities or
+  # OSV-flagged malware — the review-time complement to the scheduled audit.
+  # Requires the repository dependency graph, which parses uv.lock natively
+  # (enabled by default on public repos; private repos need GitHub Advanced
+  # Security / Code Security enabled in the repository settings).
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Review new dependencies for known vulnerabilities
+        uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: low
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0  # gitleaks scans the full commit history
+
+      - name: Scan git history for secrets
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PR comments would need a `pull-requests: write` token; keep the
+          # read-only token and rely on the job summary + SARIF artifact.
+          GITLEAKS_ENABLE_COMMENTS: "false"
+          # Organization-owned repos need a (free) license key:
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The Dockerfile only exists when the project was generated with
+      # use_docker=yes. hashFiles evaluates on the runner after checkout and
+      # returns '' when the file is absent, so the build is skipped cleanly.
+      - name: Build Docker image
+        if: ${{ hashFiles('Dockerfile') != '' }}
+        run: docker build --tag ci-image .

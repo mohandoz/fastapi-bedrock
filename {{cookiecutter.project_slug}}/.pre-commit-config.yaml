@@ -1,14 +1,30 @@
+# Hook revs are pinned and go stale; refresh them with `pre-commit autoupdate`.
+# Automate that by enabling this repo on https://pre-commit.ci (the `ci:` block
+# below) or with a scheduled CI job that runs autoupdate and opens a PR.
 default_install_hook_types: [pre-commit]
+
+# Vendored docs-UI assets (Swagger UI, ReDoc) are kept byte-for-byte identical
+# to their upstream releases, so no hook may touch them: the minified bundles
+# trip trailing-whitespace/end-of-file-fixer and exceed the
+# check-added-large-files 500 KB limit.
+exclude: ^src/{{ cookiecutter.package_name }}/core/static/
+
+ci:
+  # Only used if this repository is enabled on pre-commit.ci.
+  autoupdate_schedule: monthly
+  autofix_prs: false
+
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    # Keep in step with the ruff version in uv.lock (`pre-commit autoupdate`).
+    rev: v0.15.22
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -18,6 +34,6 @@ repos:
       - id: check-added-large-files
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.21.2
+    rev: v8.30.1
     hooks:
       - id: gitleaks

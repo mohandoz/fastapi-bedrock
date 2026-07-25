@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about your generated project
+    url: https://github.com/mohandoz/fastapi-bedrock/discussions
+    about: >-
+      "How do I…" questions, help with a project you generated (especially one
+      you have already modified), and general discussion belong in Discussions.
+  - name: Security vulnerability
+    url: https://github.com/mohandoz/fastapi-bedrock/security/advisories/new
+    about: >-
+      Please report vulnerabilities in the template (auth, JWT handling,
+      generated configuration) privately — never in a public issue.
+  - name: Documentation
+    url: https://mohandoz.github.io/fastapi-bedrock/
+    about: Quickstart, the options matrix, architecture and upgrade guides.

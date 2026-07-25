@@ -14,10 +14,13 @@ htmlcov/
 # uv
 uv.lock
 
-# OS / editors
+# OS / editors (root only — the template ships a .vscode/ inside the project dir)
 .DS_Store
-.vscode/
+/.vscode/
 .idea/
 
 # Rendered output produced while testing the template
 /output/
+
+# Local mkdocs build output
+/site/

@@ -1,8 +1,35 @@
 .DEFAULT_GOAL := help
-.PHONY: help install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down{% endif %}
+
+# Malware gate (uv preview feature): every uv command that syncs the
+# environment queries the OSV malware feed and aborts before a
+# known-malicious package can execute. Opt out per-invocation with
+# UV_MALWARE_CHECK=0.
+export UV_MALWARE_CHECK ?= 1
+.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade new-domain seed loadtest openapi clean{% if cookiecutter.use_llm_example == "yes" %} evals{% endif %}{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down db-backup db-restore{% endif %}
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+setup: ## One-command bootstrap: deps, .env, database, migrations, git hooks
+	uv sync
+	@if [ -f .env ]; then \
+		echo ".env already exists - leaving it untouched"; \
+	else \
+		cp .env.example .env; \
+{%- if cookiecutter.use_auth == "yes" %}
+		uv run python -c "import pathlib, secrets; p = pathlib.Path('.env'); p.write_text(p.read_text().replace('SECRET_KEY=change-me-to-a-long-random-secret', 'SECRET_KEY=' + secrets.token_urlsafe(48)))"; \
+		echo "Created .env with a freshly generated SECRET_KEY"; \
+{%- else %}
+		echo "Created .env from .env.example"; \
+{%- endif %}
+	fi
+{%- if cookiecutter.use_docker == "yes" %}
+	docker compose up -d --wait db
+{%- else %}
+	@echo "Expecting the PostgreSQL from DATABASE_URL in .env to be running."
+{%- endif %}
+	uv run alembic upgrade head
+	uv run pre-commit install
 
 install: ## Install dependencies and pre-commit hooks
 	uv sync
@@ -26,6 +53,11 @@ events-worker: ## Run the Redis Streams events consumer
 
 test: ## Run the test suite with coverage
 	uv run pytest
+{%- if cookiecutter.use_llm_example == "yes" %}
+
+evals: ## Run live LLM evals (needs ANTHROPIC_API_KEY; makes billed API calls)
+	uv run pytest -m evals --no-cov tests/test_llm_evals.py
+{%- endif %}
 
 lint: ## Lint and check formatting
 	uv run ruff check .
@@ -40,8 +72,12 @@ typecheck: ## Run mypy
 
 check: lint typecheck test ## Run every check (lint, types, tests)
 
+# `uv audit` (OSV-backed, currently a uv preview feature) scans
+# pyproject.toml + uv.lock natively — no requirements-txt export needed —
+# and exits non-zero on findings. Swap in `uvx pip-audit` only if SARIF
+# output is ever required.
 audit: ## Scan locked dependencies for known vulnerabilities
-	uv export --no-emit-project --format requirements-txt | uvx pip-audit -r -
+	uv audit
 
 precommit: ## Run all pre-commit hooks against every file
 	uv run pre-commit run --all-files
@@ -59,6 +95,20 @@ revision: ## Autogenerate a migration: make revision m="add users table"
 downgrade: ## Roll back the most recent migration
 	uv run alembic downgrade -1
 
+new-domain: ## Scaffold a domain slice: make new-domain name=order
+	@test -n "$(name)" || { echo 'Usage: make new-domain name=<snake_case_name>'; exit 1; }
+	uv run python scripts/new_domain.py "$(name)"
+
+seed: ## Seed the local database with demo data (idempotent, local only)
+	uv run python scripts/seed.py
+
+loadtest: ## Run the k6 load test: BASE_URL=... make loadtest (default http://localhost:8000)
+	@command -v k6 >/dev/null 2>&1 || { echo 'k6 is required: https://grafana.com/docs/k6/latest/set-up/install-k6/'; exit 1; }
+	k6 run -e BASE_URL=$(if $(BASE_URL),$(BASE_URL),http://localhost:8000) loadtest/script.js
+
+openapi: ## Export the OpenAPI schema to openapi.json
+	uv run {{ cookiecutter.project_slug }} openapi-export
+
 clean: ## Remove caches and build artefacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build
 	find . -type d -name __pycache__ -exec rm -rf {} +
@@ -69,6 +119,15 @@ db-up: ## Start only the PostgreSQL container in the background
 
 db-down: ## Stop the PostgreSQL container (data is preserved)
 	docker compose stop db
+
+db-backup: ## Dump the database to backups/<timestamp>.dump (pg_dump custom format)
+	@mkdir -p backups
+	docker compose exec -T db pg_dump -U postgres -Fc {{ cookiecutter.package_name }} > backups/$$(date +%Y%m%d-%H%M%S).dump
+	@ls -t backups | head -1 | sed 's|^|Wrote backups/|'
+
+db-restore: ## Restore a dump: make db-restore f=backups/<file>.dump
+	@test -n "$(f)" || { echo 'Usage: make db-restore f=backups/<file>.dump'; exit 1; }
+	docker compose exec -T db pg_restore -U postgres --clean --if-exists -d {{ cookiecutter.package_name }} < $(f)
 
 docker-up: ## Build and start the full stack (api + database)
 	docker compose up --build

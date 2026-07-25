@@ -36,10 +36,11 @@ async def main() -> None:
 
     logger.info("event.worker.start", stream=settings.redis_stream)
     try:
-        await asyncio.gather(
-            relay_outbox(client, stop=stop),
-            consume(client, consumer_name, stop=stop),
-        )
+        # TaskGroup cancels the sibling if one task fails and waits for both to
+        # finish, so the shared client is only closed once no task is using it.
+        async with asyncio.TaskGroup() as tg:
+            tg.create_task(relay_outbox(client, stop=stop))
+            tg.create_task(consume(client, consumer_name, stop=stop))
     finally:
         await client.aclose()
         logger.info("event.worker.stop")

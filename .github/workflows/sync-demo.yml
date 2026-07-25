@@ -1,0 +1,97 @@
+# Renders the template's DEFAULT configuration and force-pushes the result to
+# a public showcase repository, so evaluators can browse real generated code
+# (and tag-to-tag diffs double as per-release upgrade notes).
+#
+# This workflow is INERT until you configure it — it no-ops gracefully when
+# either piece is missing:
+#
+#   1. Repository variable `DEMO_REPO` — the target repo in "owner/name" form,
+#      e.g. mohandoz/fastapi-bedrock-demo. While unset, the job is skipped
+#      entirely (job-level `if`).
+#        gh variable set DEMO_REPO --body "mohandoz/fastapi-bedrock-demo"
+#   2. Repository secret `DEMO_REPO_TOKEN` — a fine-grained PAT scoped to ONLY
+#      the demo repo with "Contents: Read and write". While unset, the job
+#      logs a notice and exits green without doing anything.
+#        gh secret set DEMO_REPO_TOKEN
+#
+# Create the demo repo first: `gh repo create <owner>/fastapi-bedrock-demo
+# --public`. Full setup (including marking it as a GitHub template repo) is in
+# docs/maintainer-checklist.md.
+#
+# The push is a --force replace: the demo repo's history is a single rendered
+# commit per sync, never a place to merge PRs.
+name: Sync demo
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Render and push default configuration
+    # vars.DEMO_REPO unset -> skip the whole job (secrets are not available in
+    # job-level `if` expressions, so the token is gated in a step below).
+    if: vars.DEMO_REPO != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEMO_REPO: ${{ vars.DEMO_REPO }}
+      DEMO_REPO_TOKEN: ${{ secrets.DEMO_REPO_TOKEN }}
+    steps:
+      - name: Check configuration
+        id: gate
+        run: |
+          if [ -z "${DEMO_REPO_TOKEN}" ]; then
+            echo "::notice::secrets.DEMO_REPO_TOKEN is not configured — skipping demo sync (see the header of this workflow for setup)."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.enabled == 'true'
+
+      - name: Install uv
+        if: steps.gate.outputs.enabled == 'true'
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Configure git identity
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # The post-generation hook initialises a git repo, runs `uv sync` (so
+      # uv.lock is committed and the demo's own CI can run `--locked`), and
+      # makes the initial commit.
+      - name: Render the default configuration
+        if: steps.gate.outputs.enabled == 'true'
+        run: uvx cookiecutter . --no-input --output-dir render
+
+      - name: Stamp the rendered commit with the source revision
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: render/fastapi-ddd-service
+        run: |
+          git commit --amend -q -m "chore: render fastapi-bedrock@${GITHUB_SHA::7} (default configuration)"
+
+      - name: Force-push to the demo repository
+        if: steps.gate.outputs.enabled == 'true'
+        working-directory: render/fastapi-ddd-service
+        run: |
+          git remote add demo "https://x-access-token:${DEMO_REPO_TOKEN}@github.com/${DEMO_REPO}.git"
+          git push --force demo HEAD:main
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            git tag -f "${GITHUB_REF_NAME}"
+            git push --force demo "refs/tags/${GITHUB_REF_NAME}"
+          fi

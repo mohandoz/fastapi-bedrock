@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from typing import Annotated
 
+from fastapi import Depends
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -18,6 +20,18 @@ engine = create_async_engine(
     max_overflow=settings.db_max_overflow,
     pool_timeout=settings.db_pool_timeout,
     pool_recycle=settings.db_pool_recycle,
+    connect_args={
+        # asyncpg-specific: bound connection attempts (seconds) and enforce
+        # server-side statement/lock timeouts (Postgres GUCs, milliseconds as
+        # strings) so a stuck query cannot pin a pool slot forever. Alembic
+        # builds its own engine (migrations/env.py), so long-running
+        # migrations are unaffected.
+        "timeout": settings.db_connect_timeout,
+        "server_settings": {
+            "statement_timeout": str(settings.db_statement_timeout_ms),
+            "lock_timeout": str(settings.db_lock_timeout_ms),
+        },
+    },
 )
 
 async_session_factory = async_sessionmaker(
@@ -29,7 +43,13 @@ async_session_factory = async_sessionmaker(
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """Yield a session that commits on success and rolls back on error."""
+    """Yield a session that commits on success and rolls back on error.
+
+    Use it through ``SessionDep``: its ``scope="function"`` runs this teardown
+    BEFORE the response is sent, so commit-time failures (deadlocks,
+    serialization conflicts, dropped connections) surface as 500s instead of a
+    success response for data that was never persisted.
+    """
     async with async_session_factory() as session:
         try:
             yield session
@@ -37,6 +57,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 def _import_models() -> None:
@@ -51,7 +74,14 @@ def _import_models() -> None:
 
 
 async def init_db() -> None:
-    """Create all tables (used locally and in tests; production uses Alembic)."""
+    """Create all tables directly — a local-development convenience only.
+
+    No-op unless ``settings.db_auto_create`` is enabled (it defaults on only in
+    the local environment). Staging and production apply schema exclusively
+    through Alembic — see ``migrations/README``.
+    """
+    if not settings.db_auto_create:
+        return
     _import_models()
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)

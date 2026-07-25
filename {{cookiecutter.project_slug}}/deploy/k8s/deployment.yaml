@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ cookiecutter.project_slug }}
+  namespace: {{ cookiecutter.project_slug }}
+  labels:
+    app.kubernetes.io/name: {{ cookiecutter.project_slug }}
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ cookiecutter.project_slug }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ cookiecutter.project_slug }}
+    spec:
+      # Budget: preStop sleep (5s) + uvicorn --timeout-graceful-shutdown (20s,
+      # see the Dockerfile CMD) + margin. Raise the two together, never one
+      # side alone.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        # Matches the fixed UID/GID the Dockerfile assigns to the app user.
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          # Placeholder — kustomization.yaml's `images` block rewrites this to
+          # your registry; add a digest there to pin releases immutably.
+          image: {{ cookiecutter.project_slug }}:latest
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: {{ cookiecutter.project_slug }}-config
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+            # Only writable path: the root filesystem is read-only below.
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              # Memory limit is the OOM boundary; CPU is deliberately left
+              # unlimited to avoid throttling-induced latency spikes.
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # All probes send `Host: localhost` because TrustedHostMiddleware
+          # validates the Host header — the ConfigMap keeps `localhost` in
+          # ALLOWED_HOSTS for exactly this reason.
+          startupProbe:
+            # Absorbs slow cold starts so the liveness probe can stay tight.
+            httpGet:
+              path: /api/v1/health
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            # /health is dependency-free by design: restarting the pod cannot
+            # fix a down database, so only process health belongs here.
+            httpGet:
+              path: /api/v1/health
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            # /ready verifies the database{% if cookiecutter.use_redis == "yes" %} and Redis{% endif %}, and flips to 503 on
+            # SIGTERM so the endpoint drains before shutdown.
+            httpGet:
+              path: /api/v1/ready
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 5
+            # Must exceed READINESS_CHECK_TIMEOUT (2s) per dependency check.
+            timeoutSeconds: 6
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              # Endpoint removal is asynchronous: traffic keeps arriving
+              # briefly after the pod is marked terminating, so wait before
+              # SIGTERM starts the drain.
+              exec:
+                command: ["sleep", "5"]
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ cookiecutter.project_slug }}-secrets
+            defaultMode: 0440
+        - name: tmp
+          emptyDir: {}

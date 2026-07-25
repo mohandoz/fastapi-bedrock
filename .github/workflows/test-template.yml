@@ -1,0 +1,143 @@
+name: Test template
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bake:
+    name: Bake ${{ matrix.variant }} (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+        variant: [all-on, all-off, mixed]
+        include:
+          - variant: all-on
+            overrides: >-
+              use_auth=yes use_docker=yes use_github_actions=yes
+              use_rate_limiting=yes use_sentry=yes use_temporal=yes
+              use_redis=yes use_observability=yes use_http_client=yes
+              use_mcp=yes use_llm_example=yes
+            run-tests: true
+          - variant: all-off
+            overrides: >-
+              use_auth=no use_docker=no use_github_actions=no
+              use_rate_limiting=no use_sentry=no use_temporal=no
+              use_redis=no use_observability=no use_http_client=no
+              use_mcp=no use_llm_example=no
+          - variant: mixed
+            overrides: >-
+              use_auth=yes use_docker=yes use_rate_limiting=yes
+              use_github_actions=no use_sentry=no use_temporal=no
+              use_redis=no use_observability=no use_http_client=no
+              use_mcp=no use_llm_example=no
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-suffix: ${{ matrix.variant }}
+          cache-dependency-glob: "**/pyproject.toml"
+
+      - name: Generate project
+        run: uvx cookiecutter . --no-input --output-dir bake ${{ matrix.overrides }}
+
+      - name: Check for unrendered Jinja
+        run: |
+          if grep -rn --exclude-dir=.git 'cookiecutter\.' bake/fastapi-ddd-service; then
+            echo "::error::unrendered Jinja found in the generated project"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        working-directory: bake/fastapi-ddd-service
+        run: uv sync
+
+      - name: Lint
+        working-directory: bake/fastapi-ddd-service
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Compile all sources
+        working-directory: bake/fastapi-ddd-service
+        run: uv run python -m compileall -q src tests
+
+      - name: Import application
+        working-directory: bake/fastapi-ddd-service
+        run: uv run python -c "import fastapi_ddd_service.main"
+
+      # Postgres and Redis are started by testcontainers on the runner's
+      # Docker daemon (conftest.py has no external-service URL fallback, so
+      # GitHub `services:` containers would never be used).
+      - name: Run test suite
+        if: ${{ matrix.run-tests }}
+        working-directory: bake/fastapi-ddd-service
+        run: uv run pytest -x
+
+  reject-invalid-input:
+    name: Pre-gen hook rejects invalid input
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.13"
+
+      - name: Lint generation hooks
+        run: |
+          uvx ruff check --isolated hooks
+          python3 -m compileall -q hooks
+
+      - name: Invalid inputs must fail generation
+        env:
+          SKIP_UV_SYNC: "1"
+        run: |
+          cases=(
+            "first_entity=class"
+            "first_entity=auth"
+            "first_entity=mcp"
+            "first_entity=Item"
+            "python_version=3.11"
+            "python_version=3.13.1"
+            "python_version=3.14t"
+          )
+          for case in "${cases[@]}"; do
+            if uvx cookiecutter . --no-input --output-dir reject "$case"; then
+              echo "::error::generation succeeded with '$case' but should have been rejected"
+              exit 1
+            fi
+            echo "rejected as expected: $case"
+          done

@@ -42,15 +42,25 @@ async def publish_event(
     payload: dict[str, Any],
     *,
     event_id: str | None = None,
-    maxlen: int = 10_000,
 ) -> str:
     """Publish a CloudEvent directly to the stream (used by the outbox relay and
-    for fire-and-forget events). Returns the stream entry id."""
+    for fire-and-forget events). Returns the stream entry id.
+
+    Retention: the consumer trims processed entries (``XTRIM MINID``), so
+    ``settings.redis_stream_maxlen`` acts only as an approximate hard cap on
+    unprocessed backlog — events are lost if consumers lag by more than that
+    many entries. Monitor ``XLEN`` / ``XPENDING`` and alert well below the cap.
+    """
     fields = build_cloudevent(event_id or uuid.uuid4().hex, event_type, payload)
     message_id = cast(
         "str",
         # redis-py types the field mapping invariantly; our str->str dict is fine.
-        await client.xadd(settings.redis_stream, cast("Any", fields), maxlen=maxlen, approximate=True),
+        await client.xadd(
+            settings.redis_stream,
+            cast("Any", fields),
+            maxlen=settings.redis_stream_maxlen,
+            approximate=True,
+        ),
     )
     logger.info(
         "event.published", event_type=event_type, event_id=fields["id"], message_id=message_id

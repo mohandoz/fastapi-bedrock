@@ -1,0 +1,17 @@
+# Optional: tool-version pinning with mise (https://mise.jdx.dev).
+#
+# uv already reads `.python-version` and installs the interpreter on its own,
+# so mise is NOT required. If your team standardises on mise anyway, copy this
+# file to the project root as `mise.toml` and run `mise install` — it pins the
+# same interpreter plus uv itself, and activates the uv-managed virtualenv in
+# your shell.
+#
+# Tasks stay in the Makefile (`make help`) — one task runner is enough.
+
+[tools]
+python = "{{ cookiecutter.python_version }}"
+uv = "latest"
+
+[env]
+# Auto-activate the project venv created by `uv sync`.
+_.python.venv = { path = ".venv" }

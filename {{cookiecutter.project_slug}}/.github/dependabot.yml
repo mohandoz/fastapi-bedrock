@@ -1,17 +1,52 @@
 version: 2
+
+# `cooldown` delays version-update PRs until a release has been public for
+# N days — the primary defense against compromised-release worms, which are
+# typically flagged and yanked within days of publication. Dependabot
+# *security* updates bypass cooldown, so known-vulnerable versions are still
+# patched immediately.
 updates:
+{%- if cookiecutter.use_github_actions == "yes" %}
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-patch-days: 3
     groups:
       github-actions:
         patterns: ["*"]
-
+{% endif %}
   - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-patch-days: 3
     groups:
       python-dependencies:
         patterns: ["*"]
+{%- if cookiecutter.use_docker == "yes" %}
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      docker-images:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      compose-images:
+        patterns: ["*"]
+{%- endif %}

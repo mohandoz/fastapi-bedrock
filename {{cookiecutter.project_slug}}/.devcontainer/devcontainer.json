@@ -1,0 +1,63 @@
+{% if cookiecutter.use_docker == "yes" -%}
+{
+  "name": "{{ cookiecutter.project_slug }}",
+  // Compose-based: joins the project stack, so `db`{% if cookiecutter.use_redis == "yes" %} and `redis`{% endif %} resolve by
+  // service name inside the container (see compose.yml for the overlay).
+  "dockerComposeFile": ["../docker-compose.yml", "compose.yml"],
+  "service": "devcontainer",
+  "runServices": ["db"{% if cookiecutter.use_redis == "yes" %}, "redis"{% endif %}],
+  "workspaceFolder": "/workspaces/{{ cookiecutter.project_slug }}",
+  "features": {
+    // uv, the project's package manager (installs the pinned Python on demand).
+    "ghcr.io/jsburckhardt/devcontainer-features/uv:1": {},
+    // Host Docker socket, so the testcontainers-based suite (`make test`) works.
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "forwardPorts": [8000],
+  // The database is already healthy when this runs (runServices above), so
+  // migrations apply straight away. Inside the container use `make run` — the
+  // compose lifecycle is owned by the Dev Containers client, not `make setup`.
+  "postCreateCommand": "make install && make migrate",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "tamasfe.even-better-toml",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}
+{%- else -%}
+{
+  "name": "{{ cookiecutter.project_slug }}",
+  "image": "mcr.microsoft.com/devcontainers/python:{{ cookiecutter.python_version }}",
+  "features": {
+    // uv, the project's package manager (installs the pinned Python on demand).
+    "ghcr.io/jsburckhardt/devcontainer-features/uv:1": {},
+    // Host Docker socket, so the testcontainers-based suite (`make test`) works.
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  // Reach services running on the host (the PostgreSQL from DATABASE_URL) via
+  // host.docker.internal — native on Docker Desktop; this run argument adds it
+  // on Linux too.
+  "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+  "containerEnv": {
+    "DATABASE_URL": "postgresql+asyncpg://postgres:postgres@host.docker.internal:5432/{{ cookiecutter.package_name }}"
+  },
+  "forwardPorts": [8000],
+  "postCreateCommand": "make install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff",
+        "ms-python.mypy-type-checker",
+        "tamasfe.even-better-toml"
+      ]
+    }
+  }
+}
+{%- endif %}
