@@ -14,9 +14,13 @@ from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
 from fastapi.responses import HTMLResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
+{%- if cookiecutter.use_mcp == "yes" %}
+from fastmcp.utilities.lifespan import combine_lifespans
+{%- endif %}
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from {{ cookiecutter.package_name }}.api.llms import router as llms_router
 from {{ cookiecutter.package_name }}.api.router import api_router
 from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.database import dispose_db, init_db
@@ -52,6 +56,9 @@ from {{ cookiecutter.package_name }}.core.sentry import init_sentry
 {%- endif %}
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth.bootstrap import ensure_first_superuser
+{%- endif %}
+{%- if cookiecutter.use_mcp == "yes" %}
+from {{ cookiecutter.package_name }}.mcp.server import create_mcp_app
 {%- endif %}
 
 
@@ -142,6 +149,10 @@ def _install_docs_routes(app: FastAPI) -> None:
 
 def create_app() -> FastAPI:
     configure_logging()
+{%- if cookiecutter.use_mcp == "yes" %}
+    # Built before the app so its lifespan can be combined with ours below.
+    mcp_app = create_mcp_app()
+{%- endif %}
     app = FastAPI(
         title=settings.project_name,
         version=settings.version,
@@ -150,7 +161,11 @@ def create_app() -> FastAPI:
         license_info={"name": "MIT", "identifier": "MIT"},
         debug=settings.debug,
         generate_unique_id_function=generate_unique_route_id,
+{%- if cookiecutter.use_mcp == "yes" %}
+        lifespan=combine_lifespans(lifespan, mcp_app.lifespan),
+{%- else %}
         lifespan=lifespan,
+{%- endif %}
         openapi_url=f"{settings.api_v1_prefix}/openapi.json" if settings.docs_enabled else None,
         # /docs and /redoc are served from vendored assets (core/static) by
         # _install_docs_routes below — no CDN JavaScript on token-handling pages.
@@ -191,6 +206,13 @@ def create_app() -> FastAPI:
     # PROBLEM_RESPONSES documents 422/500 problem+json on every route and
     # replaces FastAPI's default HTTPValidationError 422 model.
     app.include_router(api_router, prefix=settings.api_v1_prefix, responses=PROBLEM_RESPONSES)
+    # Agent-facing index at the site root (gated by docs_enabled).
+    app.include_router(llms_router)
+{%- if cookiecutter.use_mcp == "yes" %}
+    # Streamable-HTTP MCP endpoint; create_mcp_app serves path="/" so the
+    # mount supplies the /mcp prefix (POST /mcp 307-redirects to /mcp/).
+    app.mount("/mcp", mcp_app)
+{%- endif %}
     return app
 
 

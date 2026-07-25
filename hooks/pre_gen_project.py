@@ -9,18 +9,22 @@ import sys
 IDENTIFIER_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
 # Entity names that would collide with packages the template already ships
-# (domains/auth, core/, api/, events/, temporal/).
-RESERVED_ENTITY_NAMES = {"api", "auth", "core", "events", "temporal"}
+# (domains/auth, domains/llm, core/, api/, events/, mcp/, temporal/) or with
+# static test modules (tests/test_mcp.py, tests/test_llm.py vs the rendered
+# tests/test_<first_entity>.py).
+RESERVED_ENTITY_NAMES = {"api", "auth", "core", "events", "llm", "mcp", "temporal"}
 
 first_entity = "{{ cookiecutter.first_entity }}"
 package_name = "{{ cookiecutter.package_name }}"
 python_version = "{{ cookiecutter.python_version }}"
 
+USE_AUTH = "{{ cookiecutter.use_auth }}" == "yes"
 USE_DOCKER = "{{ cookiecutter.use_docker }}" == "yes"
 USE_RATE_LIMITING = "{{ cookiecutter.use_rate_limiting }}" == "yes"
 USE_TEMPORAL = "{{ cookiecutter.use_temporal }}" == "yes"
 USE_REDIS = "{{ cookiecutter.use_redis }}" == "yes"
 USE_OBSERVABILITY = "{{ cookiecutter.use_observability }}" == "yes"
+USE_MCP = "{{ cookiecutter.use_mcp }}" == "yes"
 
 
 def fail(message: str) -> None:
@@ -112,4 +116,11 @@ if USE_RATE_LIMITING and not USE_REDIS:
     warn(
         "use_rate_limiting=yes with use_redis=no: limits are tracked in-memory "
         "per process and are not shared across workers or replicas."
+    )
+
+if USE_MCP and not USE_AUTH:
+    warn(
+        "use_mcp=yes with use_auth=no: the MCP endpoint at /mcp is served "
+        "without bearer-token verification. Do not expose it publicly without "
+        "adding authentication."
     )

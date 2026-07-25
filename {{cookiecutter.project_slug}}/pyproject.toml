@@ -23,6 +23,9 @@ dependencies = [
     "asyncpg>=0.30",
     "structlog>=24.4",
     "typer>=0.15",
+{%- if cookiecutter.use_mcp == "yes" %}
+    "fastmcp>=3,<4",
+{%- endif %}
 {%- if cookiecutter.use_auth == "yes" %}
     "pyjwt>=2.9",
     "pwdlib[argon2]>=0.2",

@@ -356,6 +356,24 @@ Retries fire on network errors and 5xx (not 4xx); the breaker fails fast once a
 downstream is consistently failing. With observability enabled, outbound calls
 propagate the current trace context automatically.
 {% endif %}
+{% if cookiecutter.use_mcp == "yes" -%}
+## MCP (AI agents)
+
+A [FastMCP v3](https://gofastmcp.com/) server is mounted at `/mcp` (streamable
+HTTP) with curated tools over the {{ cookiecutter.first_entity }} service layer:
+`list_{{ cookiecutter.first_entity }}s`, `get_{{ cookiecutter.first_entity }}` and `create_{{ cookiecutter.first_entity }}`
+(see `src/{{ cookiecutter.package_name }}/mcp/server.py`).
+{% if cookiecutter.use_auth == "yes" %}Requests must carry the same bearer JWT as the REST API
+(`POST /api/v1/auth/login`); refresh tokens are rejected.{% else %}The endpoint is unauthenticated —
+do not expose it publicly without adding authentication.{% endif %}
+
+{% endif -%}
+## llms.txt
+
+`GET /llms.txt` serves a machine-readable index of the API (rendered from the
+OpenAPI schema) for coding agents. It follows the same exposure policy as
+`/docs` (`DOCS_ENABLED`, forced off in production unless set explicitly).
+
 ## Scaffolding a new domain
 
 ```bash

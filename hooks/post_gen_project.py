@@ -25,6 +25,7 @@ USE_TEMPORAL = "{{ cookiecutter.use_temporal }}" == "yes"
 USE_REDIS = "{{ cookiecutter.use_redis }}" == "yes"
 USE_OBSERVABILITY = "{{ cookiecutter.use_observability }}" == "yes"
 USE_HTTP_CLIENT = "{{ cookiecutter.use_http_client }}" == "yes"
+USE_MCP = "{{ cookiecutter.use_mcp }}" == "yes"
 
 
 def remove(*relative_paths: str | Path) -> None:
@@ -88,6 +89,11 @@ def prune_disabled_features() -> None:
         remove(SRC / "core" / "observability.py")
     if not USE_HTTP_CLIENT:
         remove(SRC / "core" / "http.py", "tests/test_http.py")
+    if not USE_MCP:
+        remove(SRC / "mcp", "tests/test_mcp.py")
+    elif not USE_AUTH:
+        # The MCP bearer verifier wraps the auth domain's JWTs.
+        remove(SRC / "mcp" / "auth.py")
 
 
 def strip_bytecode_caches() -> None:
