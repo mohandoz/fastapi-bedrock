@@ -73,9 +73,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.http_client = create_http_client()
         stack.push_async_callback(app.state.http_client.aclose)
 {%- endif %}
-        # Auto-create tables only for local development; staging/production use Alembic.
-        if settings.is_local:
-            await init_db()
+        # No-op unless db_auto_create is enabled (local default); see migrations/README.
+        await init_db()
         yield
 
 

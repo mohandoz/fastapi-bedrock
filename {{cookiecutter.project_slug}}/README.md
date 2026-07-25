@@ -138,8 +138,11 @@ only from that proxy.
 {% endif %}
 ## Database migrations
 
-Models are created automatically in the local environment. For staging and
-production, use Alembic:
+Alembic owns the schema in staging and production. Locally, tables are
+auto-created at startup for convenience (`DB_AUTO_CREATE`, on by default only
+when `ENVIRONMENT=local`). Generate revisions against a database that contains
+only what migrations created — an auto-created schema yields an empty revision
+(see `migrations/README`):
 
 ```bash
 make revision m="create {{ cookiecutter.first_entity }} table"

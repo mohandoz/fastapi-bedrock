@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     db_max_overflow: int = 10
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
+    # Create tables via SQLModel.metadata.create_all at startup — a local
+    # convenience only. Forced off outside local development unless
+    # DB_AUTO_CREATE is set explicitly; deployments apply schema with Alembic
+    # (see migrations/README).
+    db_auto_create: bool = True
 
     # --- CORS / trusted hosts (comma-separated in the environment) ---
     # NoDecode stops pydantic-settings from JSON-decoding these before
@@ -166,6 +171,8 @@ class Settings(BaseSettings):
             msg = "EMAILS_ENABLED requires SMTP_HOST to be configured."
             raise ValueError(msg)
 {%- endif %}
+        if not self.is_local and "db_auto_create" not in self.model_fields_set:
+            self.db_auto_create = False
         if self.is_production:
             if self.debug:
                 msg = "DEBUG must be disabled in production."

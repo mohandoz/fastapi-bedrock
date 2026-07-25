@@ -62,7 +62,14 @@ def _import_models() -> None:
 
 
 async def init_db() -> None:
-    """Create all tables (used locally and in tests; production uses Alembic)."""
+    """Create all tables directly — a local-development convenience only.
+
+    No-op unless ``settings.db_auto_create`` is enabled (it defaults on only in
+    the local environment). Staging and production apply schema exclusively
+    through Alembic — see ``migrations/README``.
+    """
+    if not settings.db_auto_create:
+        return
     _import_models()
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)

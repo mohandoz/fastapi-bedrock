@@ -13,6 +13,8 @@ from sqlmodel import SQLModel
 from {{ cookiecutter.package_name }}.core.config import settings
 
 # Import model modules so their tables register on SQLModel.metadata.
+# core.models must come first: it sets the constraint naming convention.
+from {{ cookiecutter.package_name }}.core import models as core_models  # noqa: F401
 from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }} import models  # noqa: F401
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth import models as auth_models  # noqa: F401
@@ -36,6 +38,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        compare_server_default=True,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -46,6 +49,7 @@ def do_run_migrations(connection: Connection) -> None:
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
+        compare_server_default=True,
     )
     with context.begin_transaction():
         context.run_migrations()
