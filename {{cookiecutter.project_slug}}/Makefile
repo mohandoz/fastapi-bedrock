@@ -1,8 +1,29 @@
 .DEFAULT_GOAL := help
-.PHONY: help install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down{% endif %}
+.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down{% endif %}
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+
+setup: ## One-command bootstrap: deps, .env, database, migrations, git hooks
+	uv sync
+	@if [ -f .env ]; then \
+		echo ".env already exists - leaving it untouched"; \
+	else \
+		cp .env.example .env; \
+{%- if cookiecutter.use_auth == "yes" %}
+		uv run python -c "import pathlib, secrets; p = pathlib.Path('.env'); p.write_text(p.read_text().replace('SECRET_KEY=change-me-to-a-long-random-secret', 'SECRET_KEY=' + secrets.token_urlsafe(48)))"; \
+		echo "Created .env with a freshly generated SECRET_KEY"; \
+{%- else %}
+		echo "Created .env from .env.example"; \
+{%- endif %}
+	fi
+{%- if cookiecutter.use_docker == "yes" %}
+	docker compose up -d --wait db
+{%- else %}
+	@echo "Expecting the PostgreSQL from DATABASE_URL in .env to be running."
+{%- endif %}
+	uv run alembic upgrade head
+	uv run pre-commit install
 
 install: ## Install dependencies and pre-commit hooks
 	uv sync

@@ -20,15 +20,13 @@ repository, service and router.
 ## Quick start
 {% if cookiecutter.use_docker == "yes" %}
 ```bash
-uv sync                     # create the virtualenv and install dependencies
-cp .env.example .env        # then adjust {% if cookiecutter.use_auth == "yes" %}SECRET_KEY / {% endif %}DATABASE_URL
-docker compose up -d db     # start PostgreSQL
+make setup                  # deps, .env{% if cookiecutter.use_auth == "yes" %} + generated SECRET_KEY{% endif %}, PostgreSQL, migrations, git hooks
 make run                    # http://127.0.0.1:8000/docs
 ```
 {%- else %}
 ```bash
-uv sync                     # create the virtualenv and install dependencies
-cp .env.example .env        # point DATABASE_URL at your PostgreSQL{% if cookiecutter.use_auth == "yes" %}, set SECRET_KEY{% endif %}
+# Requires a running PostgreSQL matching DATABASE_URL (default: postgres:postgres@localhost:5432)
+make setup                  # deps, .env{% if cookiecutter.use_auth == "yes" %} + generated SECRET_KEY{% endif %}, migrations, git hooks
 make run                    # http://127.0.0.1:8000/docs
 ```
 {%- endif %}
@@ -64,6 +62,7 @@ in services and never touches the ORM directly, which keeps domains easy to test
 ## Make targets
 
 ```text
+make setup       One-command bootstrap: deps, .env, database, migrations, git hooks
 make install     Install dependencies and pre-commit hooks
 make run         Run the dev server with autoreload
 make test        Run the test suite with coverage

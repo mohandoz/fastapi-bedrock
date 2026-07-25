@@ -135,8 +135,7 @@ def main() -> None:
         "Project '{{ cookiecutter.project_slug }}' created.\n\n"
         "Next steps:\n"
         "  cd {{ cookiecutter.project_slug }}\n"
-        "  uv sync                 # if it was skipped above\n"
-        "  cp .env.example .env    # then edit {% if cookiecutter.use_auth == 'yes' %}SECRET_KEY and {% endif %}DATABASE_URL\n"
+        "  make setup              # deps, .env{% if cookiecutter.use_auth == 'yes' %} (generated SECRET_KEY){% endif %}, database, migrations, git hooks\n"
         "  make run                # start the dev server\n"
     )
 
