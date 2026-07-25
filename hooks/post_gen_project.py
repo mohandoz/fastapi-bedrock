@@ -55,7 +55,14 @@ def prune_disabled_features() -> None:
         )
     if not USE_DOCKER:
         # dynamicconfig/ is only consumed by the docker-compose Temporal service.
-        remove("Dockerfile", "docker-compose.yml", ".dockerignore", "dynamicconfig")
+        remove(
+            "Dockerfile",
+            "docker-compose.yml",
+            ".dockerignore",
+            "dynamicconfig",
+            "deploy",
+            ".devcontainer/compose.yml",
+        )
     if not USE_CI:
         # Keep dependabot.yml, the PR template and bedrock-mark.svg — only the
         # workflows are Actions-specific.

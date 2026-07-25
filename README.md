@@ -6,6 +6,14 @@
   <em>The solid, layered foundation you build your FastAPI service on.</em>
 </p>
 
+<p align="center">
+  <a href="https://github.com/<your-org>/fastapi-bedrock/actions/workflows/test-template.yml"><img src="https://github.com/<your-org>/fastapi-bedrock/actions/workflows/test-template.yml/badge.svg" alt="Test template"></a>
+  <img src="https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/types-mypy%20strict-blue" alt="mypy strict">
+  <img src="https://img.shields.io/badge/lint-ruff-D7FF64" alt="Ruff">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
+</p>
+
 A modern [Cookiecutter](https://cookiecutter.readthedocs.io/) template for
 production-ready **FastAPI** services organised with a **Domain-Driven Design**
 (vertical-slice) layout — the solid foundation you build your service on.
@@ -30,11 +38,32 @@ Docker and CI — nothing to bolt on afterwards.
 | Tests               | pytest, httpx, polyfactory, testcontainers (real PostgreSQL)      |
 | Logging             | [structlog](https://www.structlog.org/) (JSON) + request IDs      |
 | Runtime extras      | Docker + compose, CI, rate limiting, Sentry, Temporal, Redis, OTel/Grafana |
+| Dev experience      | devcontainer + VS Code presets, `make new-domain` scaffolder, `make seed`, keep-a-changelog + conventional commits |
 
 ## Architecture
 
 The generated project follows a **repository → service → router** flow with
 each domain as a self-contained vertical slice:
+
+```mermaid
+flowchart LR
+    client((Client)) --> mw["middleware<br>request-id, security headers,<br>CORS, body-size limit"]
+    mw --> api["api router<br>/api/v1"]
+    api --> health["/health, /ready"]
+    api --> auth["auth router (JWT)"]
+    api --> dom["&lt;entity&gt; router"]
+    auth --> asvc["auth service"]
+    dom --> svc["&lt;entity&gt; service"]
+    asvc --> urepo["user repository"]
+    svc --> repo["&lt;entity&gt; repository"]
+    urepo --> db[(PostgreSQL)]
+    repo --> db
+    svc -.->|outbox event| stream[(Redis Stream)]
+    svc -.->|start workflow| temporal["Temporal"]
+```
+
+*Dashed arrows are optional slices (`use_redis`, `use_temporal`); the auth
+slice ships with `use_auth=yes`.*
 
 ```text
 src/<package>/
@@ -67,16 +96,19 @@ layer stays swappable.
 ## Usage
 
 ```bash
-# with uv (no global install required)
-uvx cookiecutter gh:<your-org>/fastapi-bedrock
+# recommended: cruft, so generated projects can pull template updates later
+uvx cruft create gh:<your-org>/fastapi-bedrock
 
-# or, if cookiecutter is already installed
-cookiecutter gh:<your-org>/fastapi-bedrock
+# plain cookiecutter works too (no update tracking)
+uvx cookiecutter gh:<your-org>/fastapi-bedrock
 ```
 
-You will be prompted for the variables below. When generation finishes the
-hook initialises a fresh git repository and runs `uv sync` (set the env var
-`SKIP_UV_SYNC=1` to opt out).
+[cruft](https://cruft.github.io/cruft/) records the template revision in
+`.cruft.json`, so a generated project can later run `uvx cruft update` to pull
+in template improvements as a reviewable diff (the generated `CONTRIBUTING.md`
+documents the workflow). You will be prompted for the variables below. When
+generation finishes the hook initialises a fresh git repository and runs
+`uv sync` (set the env var `SKIP_UV_SYNC=1` to opt out).
 
 ### Prompts
 
@@ -105,18 +137,24 @@ hook initialises a fresh git repository and runs `uv sync` (set the env var
 
 ```bash
 cd <project_slug>
-cp .env.example .env        # set SECRET_KEY and DATABASE_URL
-docker compose up -d db     # start PostgreSQL
+make setup                  # deps, .env (+ generated SECRET_KEY), database, migrations, git hooks
 make run                    # uv run fastapi dev  ->  http://127.0.0.1:8000/docs
 make test                   # pytest against a testcontainers PostgreSQL (needs Docker)
 make lint                   # ruff check + format check
 make typecheck              # mypy --strict (src + tests)
-make migrate                # alembic upgrade head
+make new-domain name=order  # scaffold a full vertical slice + tests
+make seed                   # fill the local database with demo data
 ```
 
 The app runs on PostgreSQL (async, via asyncpg); `docker-compose.yml` provides a
 local database and — when `use_temporal` is enabled — a Temporal server + worker.
 Tables are auto-created in the local environment; staging and production use Alembic.
+
+Each project also ships a `.devcontainer/` (VS Code Dev Containers / GitHub
+Codespaces ready, compose-based when `use_docker=yes`), `.vscode/` presets
+(Ruff format-on-save, pytest discovery), a keep-a-changelog `CHANGELOG.md` and
+a `CONTRIBUTING.md` covering conventional commits and the `cruft update`
+workflow.
 
 ## License
 

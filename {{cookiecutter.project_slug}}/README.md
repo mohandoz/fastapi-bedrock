@@ -74,6 +74,8 @@ make audit       Scan dependencies for known CVEs (pip-audit)
 make precommit   Run all pre-commit hooks over the tree
 make migrate     Apply database migrations
 make revision    Create a migration:  make revision m="message"
+make new-domain  Scaffold a domain slice:  make new-domain name=order
+make seed        Seed the local database with demo data
 {%- if cookiecutter.use_temporal == "yes" %}
 make worker      Run the Temporal worker
 {%- endif %}
@@ -85,6 +87,30 @@ make db-up       Start only PostgreSQL (pairs with `make run`)
 make docker-up   Build and run the full stack (api + PostgreSQL)
 {%- endif %}
 ```
+
+## Error format
+
+All error responses are [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html)
+`application/problem+json` documents:
+
+```json
+{
+  "type": "urn:problem-type:not-found",
+  "title": "Not Found",
+  "status": 404,
+  "detail": "Item 42 not found",
+  "instance": "/api/v1/items/42"
+}
+```
+
+`type` is a stable machine-readable identifier (`urn:problem-type:*` for domain
+errors — not-found, conflict, unauthorized, forbidden,
+validation-error,{% if cookiecutter.use_rate_limiting == "yes" %} rate-limited,{% endif %} internal-error — and `about:blank` for plain
+HTTP errors). Validation failures (422) add an `errors` array listing the
+failing fields. Every response carries an `X-Request-ID` header (echoed from
+the request or generated) — include it when reporting issues. Access logging is
+one structured `request_completed` event per request (uvicorn's plain access
+log is disabled).
 {% if cookiecutter.use_auth == "yes" %}
 ## Authentication
 
@@ -92,8 +118,12 @@ JWT bearer authentication using the OAuth2 password flow:
 
 - `POST {{ '{prefix}' }}/auth/register` — create an account
 - `POST {{ '{prefix}' }}/auth/login` — exchange credentials for access + refresh tokens
-- `POST {{ '{prefix}' }}/auth/refresh` — mint a new access token
+- `POST {{ '{prefix}' }}/auth/refresh` — rotate the refresh token, mint a new pair
+- `POST {{ '{prefix}' }}/auth/logout` — revoke the refresh-token family
 - `GET  {{ '{prefix}' }}/auth/me` — the current user
+- `GET  {{ '{prefix}' }}/auth/me/export` — the account's stored data as JSON (GDPR portability)
+- `DELETE {{ '{prefix}' }}/auth/me` — erase the account (GDPR erasure, hard delete)
+- `POST {{ '{prefix}' }}/auth/password` — change the password (requires the current one)
 - `POST {{ '{prefix}' }}/auth/forgot-password` — email a password-reset link (always 202)
 - `POST {{ '{prefix}' }}/auth/reset-password` — set a new password with the emailed token
 - `POST {{ '{prefix}' }}/auth/verify-email` — confirm an email address
@@ -106,6 +136,22 @@ Outbound email is logged instead of sent until `EMAILS_ENABLED=true` with
 server. Reset and verification links point at `FRONTEND_URL` and expire after
 `EMAIL_TOKEN_EXPIRE_MINUTES`; set `REQUIRE_EMAIL_VERIFICATION=true` to block
 login until the address is verified.
+
+Refresh tokens rotate: each refresh invalidates the presented token, and
+reusing an already-rotated token is treated as theft — the whole token family
+is revoked (RFC 6819 reuse detection).
+{%- if cookiecutter.use_redis == "yes" %}
+Families are tracked in Redis and expire with their newest token.
+{%- else %}
+Families are tracked in the `refresh_tokens` table; expired rows are purged as
+users log in.
+{%- endif %}
+Tokens carry `aud`/`iss` claims (`JWT_AUDIENCE`/`JWT_ISSUER`), so another
+service sharing the same `SECRET_KEY` still rejects them.
+
+Set `FIRST_SUPERUSER_EMAIL` and `FIRST_SUPERUSER_PASSWORD` to create (or
+promote) a superuser at startup; guard admin routes with the `CurrentSuperuser`
+dependency from `domains/auth/dependencies.py`.
 {% endif %}
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 ## Rate limiting
@@ -157,6 +203,19 @@ docker compose up --build
 This starts the API against a PostgreSQL container and applies migrations on boot.
 All published ports bind to `127.0.0.1` only; setting `POSTGRES_PASSWORD` in
 `.env` overrides the local PostgreSQL password across the whole compose stack.
+
+Back up the local database with `make db-backup` (writes
+`backups/<timestamp>.dump`) and restore with
+`make db-restore f=backups/<file>.dump` — `make docker-down` removes the
+data volume, so back up first.
+
+## Deployment
+
+`deploy/k8s/` ships minimal production-shaped Kubernetes manifests: probes
+wired to `/api/v1/health` (liveness) and `/api/v1/ready` (readiness),
+graceful-shutdown timing matched to the image, a non-root read-only
+securityContext, file-mounted secrets and a replicated-safe migration Job.
+See [deploy/README.md](deploy/README.md).
 {% endif %}
 {%- if cookiecutter.use_temporal == "yes" %}
 ## Temporal
@@ -263,6 +322,26 @@ Retries fire on network errors and 5xx (not 4xx); the breaker fails fast once a
 downstream is consistently failing. With observability enabled, outbound calls
 propagate the current trace context automatically.
 {% endif %}
+## Scaffolding a new domain
+
+```bash
+make new-domain name=order
+```
+
+Creates `src/{{ cookiecutter.package_name }}/domains/order/` (models, schemas,
+repository, service, router) plus `tests/test_order.py`, mirroring the
+`{{ cookiecutter.first_entity }}` slice, and prints the three registration
+lines to add (API router, `_import_models`, `migrations/env.py`). Fill the
+local database with demo data via `make seed`.
+
+## Editor / dev container
+
+`.devcontainer/` runs the project in VS Code Dev Containers or GitHub
+Codespaces{% if cookiecutter.use_docker == "yes" %} (compose-based: it starts and joins the `db`{% if cookiecutter.use_redis == "yes" %} and `redis`{% endif %} services){% endif %};
+the shipped `.vscode/` settings enable Ruff format-on-save and pytest
+discovery. See `CONTRIBUTING.md` for commit conventions and the cruft
+update workflow.
+
 ## Testing
 
 ```bash

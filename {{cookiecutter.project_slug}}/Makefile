@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down{% endif %}
+.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade new-domain seed clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down db-backup db-restore{% endif %}
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -81,6 +81,13 @@ revision: ## Autogenerate a migration: make revision m="add users table"
 downgrade: ## Roll back the most recent migration
 	uv run alembic downgrade -1
 
+new-domain: ## Scaffold a domain slice: make new-domain name=order
+	@test -n "$(name)" || { echo 'Usage: make new-domain name=<snake_case_name>'; exit 1; }
+	uv run python scripts/new_domain.py "$(name)"
+
+seed: ## Seed the local database with demo data (idempotent, local only)
+	uv run python scripts/seed.py
+
 clean: ## Remove caches and build artefacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build .audit-requirements.txt
 	find . -type d -name __pycache__ -exec rm -rf {} +
@@ -91,6 +98,15 @@ db-up: ## Start only the PostgreSQL container in the background
 
 db-down: ## Stop the PostgreSQL container (data is preserved)
 	docker compose stop db
+
+db-backup: ## Dump the database to backups/<timestamp>.dump (pg_dump custom format)
+	@mkdir -p backups
+	docker compose exec -T db pg_dump -U postgres -Fc {{ cookiecutter.package_name }} > backups/$$(date +%Y%m%d-%H%M%S).dump
+	@ls -t backups | head -1 | sed 's|^|Wrote backups/|'
+
+db-restore: ## Restore a dump: make db-restore f=backups/<file>.dump
+	@test -n "$(f)" || { echo 'Usage: make db-restore f=backups/<file>.dump'; exit 1; }
+	docker compose exec -T db pg_restore -U postgres --clean --if-exists -d {{ cookiecutter.package_name }} < $(f)
 
 docker-up: ## Build and start the full stack (api + database)
 	docker compose up --build

@@ -13,6 +13,7 @@ dist/
 !.env.example
 *.db
 *.sqlite3
+backups/
 
 # Tooling caches / reports
 .ruff_cache/
@@ -26,4 +27,6 @@ htmlcov/
 # OS / editors
 .DS_Store
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json

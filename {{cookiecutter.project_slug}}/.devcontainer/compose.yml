@@ -1,0 +1,26 @@
+{% if cookiecutter.use_docker == "yes" -%}
+# Dev-container overlay for docker-compose.yml: adds the workspace service the
+# Dev Containers client attaches to. Referenced from devcontainer.json.
+services:
+  devcontainer:
+    image: mcr.microsoft.com/devcontainers/python:{{ cookiecutter.python_version }}
+    command: sleep infinity
+    volumes:
+      - ..:/workspaces/{{ cookiecutter.project_slug }}:cached
+    environment:
+      # In-network hostnames — the 127.0.0.1-published ports are host-side only.
+      DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/{{ cookiecutter.package_name }}
+{%- if cookiecutter.use_redis == "yes" %}
+      REDIS_URL: redis://redis:6379/0
+{%- endif %}
+    depends_on:
+      db:
+        condition: service_healthy
+{%- if cookiecutter.use_redis == "yes" %}
+      redis:
+        condition: service_healthy
+{%- endif %}
+{%- else -%}
+# Unused: without docker-compose.yml the dev container is image-based and fully
+# defined by devcontainer.json.
+{%- endif %}
