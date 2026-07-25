@@ -76,6 +76,7 @@ make migrate     Apply database migrations
 make revision    Create a migration:  make revision m="message"
 make new-domain  Scaffold a domain slice:  make new-domain name=order
 make seed        Seed the local database with demo data
+make loadtest    Run the k6 load test:  BASE_URL=... make loadtest
 make openapi     Export the OpenAPI schema to openapi.json
 {%- if cookiecutter.use_temporal == "yes" %}
 make worker      Run the Temporal worker
@@ -299,6 +300,17 @@ make events-worker        # runs the outbox relay + the Streams consumer
 Requires a running Redis — install it locally (`brew install redis` /
 `apt install redis-server`) and point `REDIS_URL` at it.
 {%- endif %}
+
+### Idempotency-Key
+
+`POST /api/v1/{{ cookiecutter.first_entity }}s` honours the `Idempotency-Key`
+header (IETF `draft-ietf-httpapi-idempotency-key`): send a unique key (a UUID)
+and a retry with the same key and body replays the original response
+(`Idempotent-Replayed: true`) instead of creating a duplicate. A retry while
+the first attempt is still in flight is answered 409, and reusing a key with a
+different body is answered 422. Snapshots live in Redis for `IDEMPOTENCY_TTL`
+seconds. Opt further POST routes in with the `@idempotent` marker from
+`core/idempotency.py`, on a router built with `route_class=IdempotentAPIRoute`.
 {% endif %}
 {%- if cookiecutter.use_observability == "yes" %}
 ## Observability (OpenTelemetry + Grafana)
@@ -368,6 +380,13 @@ make test
 Tests spin up a throwaway PostgreSQL container with
 [testcontainers](https://testcontainers.com/) and drive the API through an async
 HTTP client, so **Docker must be running**. No SQLite is used anywhere.
+
+## Load testing
+
+`loadtest/` contains a k6 script with smoke and ramp scenarios over the health
+probe and {{ cookiecutter.first_entity }} CRUD. With the API running:
+`make loadtest` (point elsewhere with `BASE_URL=...`). See
+`loadtest/README.md` for thresholds and options.
 
 ## Production checklist
 

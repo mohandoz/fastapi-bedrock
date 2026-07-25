@@ -78,8 +78,10 @@ def prune_disabled_features() -> None:
             SRC / "core" / "redis.py",
             SRC / "core" / "cache.py",
             SRC / "core" / "lock.py",
+            SRC / "core" / "idempotency.py",
             SRC / "events",
             "tests/test_redis.py",
+            "tests/test_idempotency.py",
         )
     if not USE_OBSERVABILITY:
         remove(SRC / "core" / "observability.py")

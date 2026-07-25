@@ -145,6 +145,8 @@ class Settings(BaseSettings):
     # processed entries via XTRIM MINID, so this only discards events if
     # consumers lag by more than this many entries.
     redis_stream_maxlen: int = 1_000_000
+    # Replay window for Idempotency-Key response snapshots (seconds).
+    idempotency_ttl: int = 86_400
 {%- endif %}
 {%- if cookiecutter.use_observability == "yes" %}
 

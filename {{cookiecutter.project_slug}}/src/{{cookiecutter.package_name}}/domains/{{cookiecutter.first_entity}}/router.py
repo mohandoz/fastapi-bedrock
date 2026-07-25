@@ -9,6 +9,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 
 from {{ cookiecutter.package_name }}.core.database import SessionDep
+{%- if cookiecutter.use_redis == "yes" %}
+from {{ cookiecutter.package_name }}.core.idempotency import IdempotentAPIRoute, idempotent
+{%- endif %}
 from {{ cookiecutter.package_name }}.core.schemas import Page
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth.dependencies import get_current_active_user
@@ -35,6 +38,9 @@ router = APIRouter(
 {%- if cookiecutter.use_auth == "yes" %}
     dependencies=[Depends(get_current_active_user)],
 {%- endif %}
+{%- if cookiecutter.use_redis == "yes" %}
+    route_class=IdempotentAPIRoute,  # activates the @idempotent marker below
+{%- endif %}
 )
 
 
@@ -48,6 +54,9 @@ async def list_{{ cookiecutter.first_entity }}s(
 
 
 @router.post("", response_model={{ entity_class }}Read, status_code=status.HTTP_201_CREATED)
+{%- if cookiecutter.use_redis == "yes" %}
+@idempotent  # honours the Idempotency-Key header (see core/idempotency.py)
+{%- endif %}
 async def create_{{ cookiecutter.first_entity }}(
     data: {{ entity_class }}Create, service: ServiceDep
 ) -> {{ entity_class }}:

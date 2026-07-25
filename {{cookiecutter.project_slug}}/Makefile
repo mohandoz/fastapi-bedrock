@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade new-domain seed openapi clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down db-backup db-restore{% endif %}
+.PHONY: help setup install run serve test lint format typecheck check audit precommit lock-check migrate revision downgrade new-domain seed loadtest openapi clean{% if cookiecutter.use_temporal == "yes" %} worker{% endif %}{% if cookiecutter.use_redis == "yes" %} events-worker{% endif %}{% if cookiecutter.use_docker == "yes" %} db-up db-down docker-up docker-down db-backup db-restore{% endif %}
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -87,6 +87,10 @@ new-domain: ## Scaffold a domain slice: make new-domain name=order
 
 seed: ## Seed the local database with demo data (idempotent, local only)
 	uv run python scripts/seed.py
+
+loadtest: ## Run the k6 load test: BASE_URL=... make loadtest (default http://localhost:8000)
+	@command -v k6 >/dev/null 2>&1 || { echo 'k6 is required: https://grafana.com/docs/k6/latest/set-up/install-k6/'; exit 1; }
+	k6 run -e BASE_URL=$(if $(BASE_URL),$(BASE_URL),http://localhost:8000) loadtest/script.js
 
 openapi: ## Export the OpenAPI schema to openapi.json
 	uv run {{ cookiecutter.project_slug }} openapi-export
