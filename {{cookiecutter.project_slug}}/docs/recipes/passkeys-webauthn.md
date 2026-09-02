@@ -31,7 +31,7 @@ Add to the *Security* block in `src/{{ cookiecutter.package_name }}/core/config.
     # --- WebAuthn (passkeys) ---
     # The Relying Party ID is your registrable domain — no scheme, no port.
     webauthn_rp_id: str = "localhost"
-    webauthn_rp_name: str = "{{ cookiecutter.project_name }}"
+    webauthn_rp_name: str = settings.project_name
     # The exact web origin the browser reports, scheme and port included.
     webauthn_origin: str = "http://localhost:3000"
 ```

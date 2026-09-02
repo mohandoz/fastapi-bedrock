@@ -1,4 +1,4 @@
-"""Operational command-line interface for {{ cookiecutter.project_name }}.
+"""Operational command-line interface for the generated service.
 
 Registered as the ``{{ cookiecutter.project_slug }}`` console script. Run it
 from the project root — ``migrate`` and ``seed`` resolve ``alembic.ini`` and
@@ -21,6 +21,7 @@ import typer
 from alembic.config import main as alembic_main
 from pydantic import EmailStr, TypeAdapter, ValidationError
 
+from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.database import async_session_factory, dispose_db
 from {{ cookiecutter.package_name }}.core.security import hash_password
 from {{ cookiecutter.package_name }}.domains.auth.models import User
@@ -34,16 +35,20 @@ from typing import Annotated
 
 import typer
 from alembic.config import main as alembic_main
+
+from {{ cookiecutter.package_name }}.core.config import settings
 {%- endif %}
 
 app = typer.Typer(
-    help="Operational commands for {{ cookiecutter.project_name }}.",
+    help=f"Operational commands for {settings.project_name}.",
     no_args_is_help=True,
 )
 {%- if cookiecutter.use_auth == "yes" %}
 
 
-async def _create_superuser(email: str, password: str) -> Literal["created", "promoted", "unchanged"]:
+async def _create_superuser(
+    email: str, password: str
+) -> Literal["created", "promoted", "unchanged"]:
     """Create ``email`` as a verified superuser, or promote the existing account."""
     async with async_session_factory() as session:
         repository = UserRepository(session)
@@ -134,9 +139,9 @@ def seed(
 
 @app.command("openapi-export")
 def openapi_export(
-    output: Annotated[
-        Path, typer.Option("--output", "-o", help="Destination file.")
-    ] = Path("openapi.json"),
+    output: Annotated[Path, typer.Option("--output", "-o", help="Destination file.")] = Path(
+        "openapi.json"
+    ),
 ) -> None:
     """Write the OpenAPI schema to a file without starting the server."""
     from {{ cookiecutter.package_name }}.main import create_app  # deferred: imports the full app

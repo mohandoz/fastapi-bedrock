@@ -69,12 +69,20 @@ from {{ cookiecutter.package_name }}.events import models as _event_models  # no
 from {{ cookiecutter.package_name }}.main import create_app
 
 API = settings.api_v1_prefix
+POSTGRES_TEST_IMAGE = (
+    "postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2"
+)
+{%- if cookiecutter.use_redis == "yes" %}
+REDIS_TEST_IMAGE = (
+    "redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576"
+)
+{%- endif %}
 
 
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
     """Start one throwaway PostgreSQL container for the whole test session."""
-    with PostgresContainer("postgres:18-alpine", driver="asyncpg") as container:
+    with PostgresContainer(POSTGRES_TEST_IMAGE, driver="asyncpg") as container:
         yield str(container.get_connection_url())
 
 
@@ -143,7 +151,7 @@ async def client(
 
 @pytest.fixture(scope="session")
 def redis_url() -> Iterator[str]:
-    with RedisContainer("redis:8-alpine") as container:
+    with RedisContainer(REDIS_TEST_IMAGE) as container:
         host = container.get_container_host_ip()
         port = container.get_exposed_port(6379)
         yield f"redis://{host}:{port}/0"

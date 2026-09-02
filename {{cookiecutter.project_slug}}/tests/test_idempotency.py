@@ -5,16 +5,21 @@ from __future__ import annotations
 
 import json
 import uuid
+from typing import cast
 
 import redis.asyncio as redis
 from httpx import AsyncClient
+from starlette.requests import Request
+from starlette.types import Scope
 
 from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.idempotency import (
     IDEMPOTENCY_KEY_HEADER,
     REPLAYED_HEADER,
+    _fingerprint,
 )
-from tests.factories import {{ entity_class }}CreateFactory
+
+from .factories import {{ entity_class }}CreateFactory
 
 API = settings.api_v1_prefix
 BASE = f"{API}/{{ cookiecutter.first_entity }}s"
@@ -22,6 +27,32 @@ BASE = f"{API}/{{ cookiecutter.first_entity }}s"
 
 def _headers(auth_headers: dict[str, str], key: str) -> dict[str, str]:
     return {**auth_headers, IDEMPOTENCY_KEY_HEADER: key}
+
+
+def test_fingerprint_includes_identity_query_and_content_type() -> None:
+    def request(query: bytes, content_type: bytes, authorization: bytes = b"") -> Request:
+        return Request(
+            cast(
+                "Scope",
+                {
+                    "type": "http",
+                    "method": "POST",
+                    "path": "/operation",
+                    "query_string": query,
+                    "headers": [
+                        (b"content-type", content_type),
+                        (b"authorization", authorization),
+                    ],
+                },
+            )
+        )
+
+    baseline = _fingerprint(request(b"mode=one", b"application/json"), b"{}")
+    assert baseline != _fingerprint(request(b"mode=two", b"application/json"), b"{}")
+    assert baseline != _fingerprint(request(b"mode=one", b"text/plain"), b"{}")
+    assert baseline != _fingerprint(
+        request(b"mode=one", b"application/json", b"Bearer another-principal"), b"{}"
+    )
 
 
 async def test_same_key_replays_the_first_response(
@@ -41,6 +72,29 @@ async def test_same_key_replays_the_first_response(
 
     listing = await client.get(BASE, headers=auth_headers)
     assert listing.json()["total"] == 1  # no duplicate row was created
+{%- if cookiecutter.use_auth == "yes" %}
+
+
+async def test_same_key_cannot_replay_across_principals(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    credentials = {"email": "other-idempotency-user@example.com", "password": "supersecret123"}
+    assert (await client.post(f"{API}/auth/register", json=credentials)).status_code == 201
+    login = await client.post(
+        f"{API}/auth/login",
+        data={"username": credentials["email"], "password": credentials["password"]},
+    )
+    other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    payload = {{ entity_class }}CreateFactory.build().model_dump()
+    key = uuid.uuid4().hex
+
+    first = await client.post(BASE, json=payload, headers=_headers(auth_headers, key))
+    second = await client.post(BASE, json=payload, headers=_headers(other_headers, key))
+
+    assert first.status_code == 201
+    assert second.status_code == 422
+    assert second.json()["type"] == "urn:problem-type:idempotency-mismatch"
+{%- endif %}
 
 
 async def test_key_reuse_with_different_body_is_422(

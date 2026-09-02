@@ -51,11 +51,22 @@ class ConsoleEmailBackend:
     """Logs emails instead of delivering them — the local-development default."""
 
     async def send(self, message: EmailMessage) -> None:
-        logger.info(
-            "email.console",
+        if settings.is_local:
+            # Local developers need the link to exercise reset/verification
+            # flows. Outside local, message bodies contain live bearer tokens
+            # and must never enter shared logs.
+            logger.info(
+                "email.console",
+                to=message.to,
+                subject=message.subject,
+                body=message.text,
+            )
+            return
+        logger.warning(
+            "email.not_delivered",
             to=message.to,
             subject=message.subject,
-            body=message.text,
+            reason="email delivery is disabled",
         )
 
 

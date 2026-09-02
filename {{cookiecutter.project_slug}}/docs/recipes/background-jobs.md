@@ -53,9 +53,7 @@ async def notify_webhook(entity_id: UUID) -> None:
 
 
 @router.post("", response_model={{ entity_class }}Read, status_code=status.HTTP_201_CREATED)
-async def create_{{ cookiecutter.first_entity }}(
-    data: {{ entity_class }}Create, service: ServiceDep, background: BackgroundTasks
-) -> {{ entity_class }}:
+async def create_{{ cookiecutter.first_entity }}(data: {{ entity_class }}Create, service: ServiceDep, background: BackgroundTasks) -> {{ entity_class }}:
     obj = await service.create(data)
     background.add_task(notify_webhook, obj.id)
     return obj

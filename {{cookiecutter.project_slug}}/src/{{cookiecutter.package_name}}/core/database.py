@@ -64,10 +64,10 @@ SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 def _import_models() -> None:
     """Import model modules so their tables register on ``SQLModel.metadata``."""
-    from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }} import models  # noqa: F401
 {%- if cookiecutter.use_auth == "yes" %}
     from {{ cookiecutter.package_name }}.domains.auth import models as auth_models  # noqa: F401
 {%- endif %}
+    from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }} import models  # noqa: F401
 {%- if cookiecutter.use_redis == "yes" %}
     from {{ cookiecutter.package_name }}.events import models as event_models  # noqa: F401
 {%- endif %}

@@ -53,4 +53,5 @@ Async FastAPI + SQLModel service in a DDD layout. Python {{ cookiecutter.python_
 - `settings` (`core/config.py`) is a cached singleton; tests pin env vars in
   `tests/conftest.py` BEFORE it is imported — follow that pattern.
 - Local dev auto-creates tables (`db_auto_create`); staging/production apply
-  schema ONLY via Alembic.
+  schema ONLY via Alembic. Keep the shipped initial revision and every later
+  model change in sync; `tests/test_migrations.py` rejects schema drift.

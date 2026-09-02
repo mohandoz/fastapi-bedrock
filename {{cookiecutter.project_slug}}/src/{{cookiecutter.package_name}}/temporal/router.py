@@ -33,9 +33,7 @@ router = APIRouter(
     status_code=status.HTTP_202_ACCEPTED,
     summary="Start a workflow that processes a {{ cookiecutter.first_entity }}",
 )
-async def start_process_{{ cookiecutter.first_entity }}(
-    entity_id: UUID, client: TemporalClient
-) -> dict[str, str]:
+async def start_process_{{ cookiecutter.first_entity }}(entity_id: UUID, client: TemporalClient) -> dict[str, str]:
     handle = await client.start_workflow(
         Process{{ entity_class }}Workflow.run,
         str(entity_id),

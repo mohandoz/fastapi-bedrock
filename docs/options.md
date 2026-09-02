@@ -34,12 +34,15 @@ The full account lifecycle as a `domains/auth/` vertical slice:
   `/me` (read/export/delete, GDPR-shaped), password change / forgot / reset,
   email verification.
 - **Tokens** — JWT access + refresh with `iss`/`aud` binding; refresh tokens
-  rotate, and reuse of a rotated token revokes the whole token family
+  rotate atomically, and reuse of a rotated token revokes the whole token family
   (RFC 6819 reuse detection). Families live in Redis when `use_redis=yes`,
-  otherwise in a `refresh_tokens` table.
+  otherwise in a `refresh_tokens` table. Password changes/resets advance an
+  account version carried by every token, invalidating old sessions and making
+  reset links single-use.
 - **Passwords** — Argon2 via `pwdlib`.
-- **Email** — password-reset and verification emails (`core/email.py`); logged
-  instead of sent until `EMAILS_ENABLED=true`, so local dev needs no SMTP.
+- **Email** — password-reset and verification emails (`core/email.py`); full
+  messages are logged only in local development. Other environments emit
+  metadata-only warnings until `EMAILS_ENABLED=true`.
 - **Bootstrap** — `FIRST_SUPERUSER_EMAIL`/`FIRST_SUPERUSER_PASSWORD` create or
   promote a superuser at startup; `OPEN_REGISTRATION=false` makes deployments
   invite-only.
@@ -54,8 +57,9 @@ the `first_entity` routes are then unprotected.
   PostgreSQL (plus Temporal/Redis/LGTM services when those flags are on), all
   ports bound to `127.0.0.1`.
 - `docker compose watch` support for edit-and-reload inside containers.
-- `deploy/k8s/` production-shaped Kubernetes manifests (probes, non-root
-  read-only securityContext, file-mounted secrets, migration Job).
+- `deploy/k8s/` production-shaped Kubernetes overlays: migration-first rollout,
+  probes, non-root read-only securityContext, file-mounted secrets and optional
+  Redis/Temporal worker Deployments.
 - A compose-based `.devcontainer/` (a single-container devcontainer remains
   when the flag is off).
 - `make db-up`, `make docker-up`, `make db-backup` / `db-restore` targets.
@@ -73,9 +77,9 @@ suite still needs a Docker daemon for testcontainers.
 
 ### `use_rate_limiting` — slowapi (default: `yes`)
 
-- Global `RATE_LIMIT` (default `100/minute`) per client IP; abusable
-  unauthenticated auth routes (register, forgot-password) are stricter
-  (`5/minute`).
+- Global `RATE_LIMIT` (default `100/minute`) per client IP; register,
+  forgot/reset-password, login, refresh, verification and metered LLM routes
+  carry stricter endpoint-specific limits.
 - Counters are shared across workers via Redis when `use_redis=yes`,
   otherwise in-memory per process.
 - Adds `slowapi`; documents the `FORWARDED_ALLOW_IPS` / `--proxy-headers`
@@ -99,11 +103,14 @@ suite still needs a Docker daemon for testcontainers.
 ### `use_redis` — cache, outbox events, locks (default: `no`)
 
 - **Cache** — typed cache-aside helper (`core/cache.py`, `CacheDep`).
-- **Distributed lock** — `core/lock.py` for run-once-across-replicas jobs.
+- **Distributed lock** — `core/lock.py` for lease-bounded cross-replica mutual
+  exclusion. Work must finish inside the TTL; irreversible exactly-once effects
+  still need fencing/idempotency.
 - **Transactional outbox** — `enqueue_event(session, ...)` writes events in
   the same DB transaction as your domain change; a relay forwards committed
   rows to a Redis Stream (CloudEvents 1.0 envelope) and a consumer group
-  processes them at-least-once (`make events-worker`).
+  processes them at-least-once (`make events-worker`). Poison messages move to
+  a dead-letter stream after `REDIS_MAX_DELIVERY_ATTEMPTS`.
 - **Idempotency-Key** — replayable POST responses per the IETF
   `Idempotency-Key` draft, snapshots stored in Redis.
 - Upgrades other flags: shared rate-limit counters, Redis-backed

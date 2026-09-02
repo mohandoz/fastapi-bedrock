@@ -16,6 +16,7 @@ from uuid import UUID
 {% if cookiecutter.use_redis == "yes" -%}
 import redis.asyncio as redis
 {%- else -%}
+from sqlalchemy import update
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -49,13 +50,40 @@ class RefreshTokenStore:
         ttl = max(int((expires_at - datetime.now(UTC)).total_seconds()), 1)
         await self._redis.set(self._key(family), jti, ex=ttl)
 
-    async def consume(self, *, jti: str, family: str) -> TokenState:
-        current = await self._redis.get(self._key(family))
-        if current is None:
-            return "unknown"
-        if current != jti:
+    async def rotate(
+        self,
+        *,
+        jti: str,
+        new_jti: str,
+        family: str,
+        user_id: UUID,
+        expires_at: datetime,
+    ) -> TokenState:
+        """Atomically consume ``jti`` and install ``new_jti`` as its successor."""
+        del user_id  # the signed token carries `sub`; Redis stores one key per family
+        ttl = max(int((expires_at - datetime.now(UTC)).total_seconds()), 1)
+        script = """
+        local current = redis.call('GET', KEYS[1])
+        if not current then return 0 end
+        if current ~= ARGV[1] then return -1 end
+        redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])
+        return 1
+        """
+        verdict = int(
+            await self._redis.eval(
+                script,
+                1,
+                self._key(family),
+                jti,
+                new_jti,
+                ttl,
+            )
+        )
+        if verdict == 1:
+            return "ok"
+        if verdict == -1:
             return "reused"
-        return "ok"
+        return "unknown"
 
     async def revoke_family(self, family: str) -> None:
         await self._redis.delete(self._key(family))
@@ -85,16 +113,39 @@ class RefreshTokenStore:
         )
         await self.session.flush()
 
-    async def consume(self, *, jti: str, family: str) -> TokenState:
-        token = await self.session.get(RefreshToken, jti)
-        if token is None or token.family != family:
+    async def rotate(
+        self,
+        *,
+        jti: str,
+        new_jti: str,
+        family: str,
+        user_id: UUID,
+        expires_at: datetime,
+    ) -> TokenState:
+        """Atomically consume ``jti`` and insert its successor in this transaction."""
+        now = datetime.now(UTC)
+        result = await self.session.exec(
+            update(RefreshToken)
+            .where(col(RefreshToken.jti) == jti)
+            .where(col(RefreshToken.family) == family)
+            .where(col(RefreshToken.revoked_at).is_(None))
+            .where(col(RefreshToken.expires_at) > now)
+            .values(revoked_at=now)
+            .returning(col(RefreshToken.jti))
+        )
+        if result.one_or_none() is None:
+            token = await self.session.get(RefreshToken, jti, populate_existing=True)
+            if token is not None and token.family == family and token.revoked_at is not None:
+                return "reused"
             return "unknown"
-        if token.revoked_at is not None:
-            return "reused"
-        if token.expires_at <= datetime.now(UTC):
-            return "unknown"
-        token.revoked_at = datetime.now(UTC)
-        self.session.add(token)
+        self.session.add(
+            RefreshToken(
+                jti=new_jti,
+                family=family,
+                user_id=user_id,
+                expires_at=expires_at,
+            )
+        )
         await self.session.flush()
         return "ok"
 

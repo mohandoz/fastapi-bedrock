@@ -30,6 +30,10 @@ class User(UserBase, UUIDMixin, TimestampMixin, table=True):
     __tablename__ = "users"
 
     hashed_password: str
+    # Incremented on every password change/reset. Tokens carry the version they
+    # were issued under, so changing credentials invalidates every old session
+    # and makes password-reset links single-use without a separate token table.
+    auth_version: int = Field(default=0, nullable=False)
 {%- if cookiecutter.use_redis == "no" %}
 
 

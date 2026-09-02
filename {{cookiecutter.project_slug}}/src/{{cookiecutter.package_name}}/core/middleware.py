@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from typing import TypeGuard
 
 import structlog
 from starlette.datastructures import Headers, MutableHeaders
@@ -20,6 +21,7 @@ from {{ cookiecutter.package_name }}.core.config import settings
 logger = structlog.get_logger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-ID"
+_MAX_REQUEST_ID_LENGTH = 128
 
 _BASE_SECURITY_HEADERS = (
     ("X-Content-Type-Options", "nosniff"),
@@ -46,6 +48,12 @@ _DOCS_CSP = (
 # Matched against the raw ASGI scope["path"] — never request.url.path, which
 # is derived from the client-controlled Host header (CVE-2026-48710 "BadHost").
 _DOCS_PATHS = frozenset({"/docs", "/redoc"})
+
+
+def _valid_request_id(value: str | None) -> TypeGuard[str]:
+    return bool(
+        value and len(value) <= _MAX_REQUEST_ID_LENGTH and value.isascii() and value.isprintable()
+    )
 
 
 def apply_security_headers(headers: MutableHeaders, *, docs_page: bool = False) -> None:
@@ -82,7 +90,8 @@ class RequestIDMiddleware:
             await self.app(scope, receive, send)
             return
 
-        request_id = Headers(scope=scope).get(REQUEST_ID_HEADER) or uuid.uuid4().hex
+        supplied = Headers(scope=scope).get(REQUEST_ID_HEADER)
+        request_id = supplied if _valid_request_id(supplied) else uuid.uuid4().hex
         method: str = scope["method"]
         path: str = scope["path"]
         scope.setdefault("state", {})["request_id"] = request_id

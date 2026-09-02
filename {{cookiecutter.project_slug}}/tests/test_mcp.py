@@ -18,6 +18,9 @@ from fastmcp.exceptions import ToolError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+{% if cookiecutter.use_auth == "yes" -%}
+from {{ cookiecutter.package_name }}.mcp import auth as mcp_auth
+{%- endif %}
 from {{ cookiecutter.package_name }}.mcp import server as mcp_server
 
 UNKNOWN_ID = "00000000-0000-0000-0000-000000000000"
@@ -30,6 +33,9 @@ def mcp_db(
 ) -> None:
     """Point the MCP tools' session factory at the testcontainers database."""
     monkeypatch.setattr(mcp_server, "async_session_factory", session_factory)
+{%- if cookiecutter.use_auth == "yes" %}
+    monkeypatch.setattr(mcp_auth, "async_session_factory", session_factory)
+{%- endif %}
 
 
 async def test_create_and_get_roundtrip(mcp_db: None) -> None:
@@ -79,14 +85,47 @@ async def test_expected_tools_are_registered() -> None:
 {%- if cookiecutter.use_auth == "yes" %}
 
 
-async def test_verifier_accepts_access_tokens() -> None:
+async def test_verifier_accepts_access_tokens(
+    mcp_db: None,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     from {{ cookiecutter.package_name }}.core.security import create_access_token
+    from {{ cookiecutter.package_name }}.domains.auth.models import User
     from {{ cookiecutter.package_name }}.mcp.auth import build_token_verifier
 
+    user = User(
+        email="mcp-user@example.com",
+        hashed_password="not-used-by-this-test",
+    )
+    async with session_factory() as session:
+        session.add(user)
+        await session.commit()
     verifier = build_token_verifier()
-    access = await verifier.verify_token(create_access_token(uuid.uuid4()))
+    access = await verifier.verify_token(create_access_token(user.id, version=user.auth_version))
     assert access is not None
     assert access.claims["type"] == "access"
+
+
+async def test_verifier_rejects_inactive_or_deleted_users(
+    mcp_db: None,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from {{ cookiecutter.package_name }}.core.security import create_access_token
+    from {{ cookiecutter.package_name }}.domains.auth.models import User
+    from {{ cookiecutter.package_name }}.mcp.auth import build_token_verifier
+
+    user = User(
+        email="inactive-mcp@example.com",
+        hashed_password="not-used-by-this-test",
+        is_active=False,
+    )
+    async with session_factory() as session:
+        session.add(user)
+        await session.commit()
+    verifier = build_token_verifier()
+    inactive_token = create_access_token(user.id, version=user.auth_version)
+    assert await verifier.verify_token(inactive_token) is None
+    assert await verifier.verify_token(create_access_token(uuid.uuid4())) is None
 
 
 async def test_verifier_rejects_refresh_and_garbage_tokens() -> None:

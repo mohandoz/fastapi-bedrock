@@ -1,11 +1,11 @@
 [project]
-name = "{{ cookiecutter.package_name }}"
-version = "{{ cookiecutter.version }}"
-description = "{{ cookiecutter.project_description }}"
+name = {{ cookiecutter.package_name | tojson }}
+version = {{ cookiecutter.version | tojson }}
+description = {{ cookiecutter.project_description | tojson }}
 readme = "README.md"
 requires-python = ">={{ cookiecutter.python_version }}"
 license = { text = "MIT" }
-authors = [{ name = "{{ cookiecutter.author_name }}", email = "{{ cookiecutter.author_email }}" }]
+authors = [{ name = {{ cookiecutter.author_name | tojson }}, email = {{ cookiecutter.author_email | tojson }} }]
 dependencies = [
     # standard-no-fastapi-cloud-cli = the [standard] extra minus fastapi-cloud-cli
     # (commercial deploy tooling + its telemetry); `fastapi run` still works.
@@ -100,6 +100,9 @@ dev = [
 {%- if cookiecutter.use_llm_example == "yes" %}
     # Offline-marked eval harness for the llm domain (tests/test_llm_evals.py).
     "pydantic-evals>=2.18",
+    # Anthropic 1.x exposes exception request/response types from httpx2;
+    # deterministic error-mapping tests construct those objects directly.
+    "httpx2>=2,<3",
 {%- endif %}
     "testcontainers[postgres{% if cookiecutter.use_redis == "yes" %},redis{% endif %}]>=4.15",
 ]
@@ -107,13 +110,13 @@ dev = [
 [build-system]
 # uv_build finds src/{{ cookiecutter.package_name }} by convention — no
 # packages table needed. The band matches [tool.uv] required-version below.
-requires = ["uv_build>=0.11,<0.12"]
+requires = ["uv_build>=0.11,<0.13"]
 build-backend = "uv_build"
 
 [tool.uv]
 # The post-generation hook runs `uv lock`; a version floor keeps contributor
 # and CI uv skew from producing incompatible lockfiles.
-required-version = ">=0.11"
+required-version = ">=0.11,<0.13"
 
 [tool.ruff]
 line-length = 100

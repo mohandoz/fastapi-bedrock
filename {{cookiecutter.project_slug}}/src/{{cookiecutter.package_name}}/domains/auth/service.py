@@ -69,8 +69,6 @@ class AuthService:
             user = await self.repository.add(user)
         except IntegrityError as exc:  # lost a concurrent-registration race
             raise ConflictError("A user with this email already exists") from exc
-        if settings.require_email_verification:
-            await self._send_verification_email(user)
         return user
 
     async def authenticate(self, email: str, password: str) -> User:
@@ -107,14 +105,31 @@ class AuthService:
         expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         await self.token_store.store(jti=jti, family=family, user_id=user.id, expires_at=expires_at)
         return Token(
-            access_token=create_access_token(user.id),
-            refresh_token=create_refresh_token(user.id, jti=jti, family=family),
+            access_token=create_access_token(user.id, version=user.auth_version),
+            refresh_token=create_refresh_token(
+                user.id,
+                jti=jti,
+                family=family,
+                version=user.auth_version,
+            ),
         )
 
     async def refresh_tokens(self, refresh_token: str) -> Token:
         """Rotate a refresh token: the presented jti is invalidated on success."""
-        user_id, jti, family = self._refresh_claims(refresh_token)
-        state = await self.token_store.consume(jti=jti, family=family)
+        user_id, jti, family, version = self._refresh_claims(refresh_token)
+        user = await self.repository.get(user_id)
+        if user is None or not user.is_active or user.auth_version != version:
+            await self.token_store.revoke_family(family)
+            raise UnauthorizedError("User or credentials are no longer valid")
+        new_jti = uuid4().hex
+        expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
+        state = await self.token_store.rotate(
+            jti=jti,
+            new_jti=new_jti,
+            family=family,
+            user_id=user.id,
+            expires_at=expires_at,
+        )
         if state == "reused":
             # Replay of an already-rotated token — assume theft and log out
             # every token descended from this login.
@@ -123,14 +138,19 @@ class AuthService:
             raise UnauthorizedError("Invalid refresh token")
         if state != "ok":
             raise UnauthorizedError("Invalid refresh token")
-        user = await self.repository.get(user_id)
-        if user is None or not user.is_active:
-            raise UnauthorizedError("User is no longer valid")
-        return await self.issue_tokens(user, family=family)
+        return Token(
+            access_token=create_access_token(user.id, version=user.auth_version),
+            refresh_token=create_refresh_token(
+                user.id,
+                jti=new_jti,
+                family=family,
+                version=user.auth_version,
+            ),
+        )
 
     async def logout(self, refresh_token: str) -> None:
         """Revoke the token's whole family. Access tokens ride out their short expiry."""
-        user_id, _jti, family = self._refresh_claims(refresh_token)
+        user_id, _jti, family, _version = self._refresh_claims(refresh_token)
         await self.token_store.revoke_family(family)
         logger.info("auth.logout", user_id=str(user_id))
 
@@ -139,7 +159,13 @@ class AuthService:
         if not valid:
             raise ForbiddenError("Current password is incorrect")
         hashed = await run_in_threadpool(hash_password, new_password)
-        await self.repository.update(user, {"hashed_password": hashed})
+        changed = await self.repository.update_password_if_version(
+            user,
+            expected_version=user.auth_version,
+            hashed_password=hashed,
+        )
+        if not changed:
+            raise UnauthorizedError("Credentials changed concurrently; authenticate again")
         logger.info("auth.password_changed", user_id=str(user.id))
 
     async def delete_account(self, user: User) -> None:
@@ -163,8 +189,8 @@ class AuthService:
         await self.repository.delete(user)
         logger.info("auth.account_deleted", user_id=str(user_id))
 
-    def _refresh_claims(self, refresh_token: str) -> tuple[UUID, str, str]:
-        """Validate a refresh JWT and return its ``(user_id, jti, family)`` claims."""
+    def _refresh_claims(self, refresh_token: str) -> tuple[UUID, str, str, int]:
+        """Validate a refresh JWT and return its identity and rotation claims."""
         try:
             payload = decode_token(refresh_token)
         except jwt.PyJWTError as exc:
@@ -174,45 +200,72 @@ class AuthService:
         subject = payload.get("sub")
         jti = payload.get("jti")
         family = payload.get("family")
-        if subject is None or jti is None or family is None:
+        version = payload.get("ver")
+        if (
+            not isinstance(subject, str)
+            or not isinstance(jti, str)
+            or not isinstance(family, str)
+            or not isinstance(version, int)
+        ):
             raise UnauthorizedError("Invalid refresh token")
         try:
             user_id = UUID(subject)
         except ValueError as exc:
             raise UnauthorizedError("Invalid refresh token") from exc
-        return user_id, jti, family
+        return user_id, jti, family, version
 
-    async def request_password_reset(self, email: str) -> None:
-        """Email a password-reset link. No-ops for unknown or inactive accounts.
+    async def prepare_password_reset(self, email: str) -> EmailMessage | None:
+        """Build a reset email without exposing account existence through work cost.
 
-        The caller must return the same response either way, so this endpoint
-        cannot be used to probe which emails have accounts.
+        Delivery is scheduled after the HTTP response starts. Unknown accounts
+        still perform token creation and rendering, keeping the synchronous path
+        materially equivalent without sending mail to an attacker-controlled
+        address.
         """
         user = await self.repository.get_by_email(email.lower())
-        if user is None or not user.is_active:
-            logger.info("auth.password_reset_skipped", reason="unknown_or_inactive_email")
-            return
-        token = create_email_token(user.id, "password_reset")
+        active = user is not None and user.is_active
+        token = create_email_token(
+            user.id if active and user is not None else UUID(int=0),
+            "password_reset",
+            version=user.auth_version if active and user is not None else 0,
+        )
         html, text = render_email(
             "password_reset",
             project_name=settings.project_name,
             link=f"{settings.frontend_url}/reset-password?token={token}",
             expire_minutes=settings.email_token_expire_minutes,
         )
-        await self.email_backend.send(
-            EmailMessage(
-                to=user.email,
-                subject=f"{settings.project_name} — password recovery",
-                html=html,
-                text=text,
-            )
+        if not active or user is None:
+            logger.info("auth.password_reset_skipped", reason="unknown_or_inactive_email")
+            return None
+        return EmailMessage(
+            to=user.email,
+            subject=f"{settings.project_name} — password recovery",
+            html=html,
+            text=text,
         )
-        logger.info("auth.password_reset_requested", user_id=str(user.id))
+
+    async def deliver_password_reset(self, message: EmailMessage) -> None:
+        """Deliver a prepared reset email after the HTTP response has started."""
+        try:
+            await self.email_backend.send(message)
+        except Exception:
+            # The client already received the non-enumerating 202. Record only
+            # metadata; the body contains a live token and must never be logged.
+            logger.exception("auth.password_reset_delivery_failed", to=message.to)
+            return
+        logger.info("auth.password_reset_delivered", to=message.to)
 
     async def reset_password(self, token: str, new_password: str) -> None:
         user = await self._user_from_email_token(token, "password_reset")
         hashed = await run_in_threadpool(hash_password, new_password)
-        await self.repository.update(user, {"hashed_password": hashed})
+        changed = await self.repository.update_password_if_version(
+            user,
+            expected_version=user.auth_version,
+            hashed_password=hashed,
+        )
+        if not changed:
+            raise UnauthorizedError("Invalid or already-used token")
         logger.info("auth.password_reset", user_id=str(user.id))
 
     async def verify_email(self, token: str) -> User:
@@ -222,23 +275,60 @@ class AuthService:
             logger.info("auth.email_verified", user_id=str(user.id))
         return user
 
-    async def _send_verification_email(self, user: User) -> None:
-        token = create_email_token(user.id, "email_verification")
+    def prepare_verification_email(self, user: User) -> EmailMessage:
+        """Build the registration email; the route delivers it after DB commit."""
+        return self._build_verification_email(
+            user_id=user.id,
+            version=user.auth_version,
+            to=user.email,
+        )
+
+    async def prepare_verification_resend(self, email: str) -> EmailMessage | None:
+        """Build a replacement verification email without enumerating accounts."""
+        user = await self.repository.get_by_email(email.lower())
+        eligible = (
+            settings.require_email_verification
+            and user is not None
+            and user.is_active
+            and not user.is_verified
+        )
+        message = self._build_verification_email(
+            user_id=user.id if eligible and user is not None else UUID(int=0),
+            version=user.auth_version if eligible and user is not None else 0,
+            to=user.email if eligible and user is not None else "discarded@example.invalid",
+        )
+        if not eligible:
+            logger.info("auth.verification_resend_skipped", reason="ineligible_email")
+            return None
+        return message
+
+    def _build_verification_email(self, *, user_id: UUID, version: int, to: str) -> EmailMessage:
+        token = create_email_token(
+            user_id,
+            "email_verification",
+            version=version,
+        )
         html, text = render_email(
             "verify_email",
             project_name=settings.project_name,
             link=f"{settings.frontend_url}/verify-email?token={token}",
             expire_minutes=settings.email_token_expire_minutes,
         )
-        await self.email_backend.send(
-            EmailMessage(
-                to=user.email,
-                subject=f"{settings.project_name} — verify your email",
-                html=html,
-                text=text,
-            )
+        return EmailMessage(
+            to=to,
+            subject=f"{settings.project_name} — verify your email",
+            html=html,
+            text=text,
         )
-        logger.info("auth.verification_email_sent", user_id=str(user.id))
+
+    async def deliver_verification_email(self, message: EmailMessage) -> None:
+        """Deliver verification mail after the response/transaction completes."""
+        try:
+            await self.email_backend.send(message)
+        except Exception:
+            logger.exception("auth.verification_delivery_failed", to=message.to)
+            return
+        logger.info("auth.verification_email_sent", to=message.to)
 
     async def _user_from_email_token(self, token: str, expected_type: EmailTokenType) -> User:
         try:
@@ -257,4 +347,6 @@ class AuthService:
         user = await self.repository.get(user_id)
         if user is None or not user.is_active:
             raise UnauthorizedError("User is no longer valid")
+        if payload.get("ver") != user.auth_version:
+            raise UnauthorizedError("Invalid or already-used token")
         return user

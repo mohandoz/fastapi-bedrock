@@ -39,6 +39,8 @@ async def get_current_user(
     user = await UserRepository(session).get(user_id)
     if user is None:
         raise UnauthorizedError("User not found")
+    if payload.get("ver") != user.auth_version:
+        raise UnauthorizedError("Credentials have changed; authenticate again")
     return user
 
 

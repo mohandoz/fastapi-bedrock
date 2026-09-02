@@ -50,15 +50,21 @@ async def test_request_id_is_generated_when_absent(light_client: AsyncClient) ->
     assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-ID"])
 
 
+async def test_oversized_request_id_is_replaced(light_client: AsyncClient) -> None:
+    response = await light_client.get(
+        f"{API}/health",
+        headers={"X-Request-ID": "x" * 129},
+    )
+    assert re.fullmatch(r"[0-9a-f]{32}", response.headers["X-Request-ID"])
+
+
 async def test_security_headers_present(light_client: AsyncClient) -> None:
     response = await light_client.get(f"{API}/health")
     assert response.headers["X-Content-Type-Options"] == "nosniff"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["Referrer-Policy"] == "no-referrer"
-    assert (
-        response.headers["Content-Security-Policy"]
-        == "default-src 'none'; frame-ancestors 'none'"
-    )
+    csp = response.headers["Content-Security-Policy"]
+    assert csp == "default-src 'none'; frame-ancestors 'none'"
     assert response.headers["Permissions-Policy"] == "camera=(), microphone=(), geolocation=()"
     assert response.headers["Cross-Origin-Opener-Policy"] == "same-origin"
     # HSTS is production-only; the test environment runs as `local`.

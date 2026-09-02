@@ -85,10 +85,11 @@ class ResilientHttpClient:
         self._breakers: dict[str, CircuitBreaker] = {}
 
     def _breaker_for(self, url: str) -> CircuitBreaker:
-        host = httpx.URL(url).host
-        breaker = self._breakers.get(host)
+        parsed = httpx.URL(url)
+        origin = f"{parsed.scheme}://{parsed.netloc.decode('ascii')}"
+        breaker = self._breakers.get(origin)
         if breaker is None:
-            breaker = self._breakers[host] = CircuitBreaker(
+            breaker = self._breakers[origin] = CircuitBreaker(
                 failure_threshold=settings.http_breaker_failure_threshold,
                 reset_timeout=settings.http_breaker_reset_timeout,
             )

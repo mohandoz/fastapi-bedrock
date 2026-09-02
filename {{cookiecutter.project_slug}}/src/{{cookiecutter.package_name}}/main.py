@@ -57,6 +57,9 @@ from {{ cookiecutter.package_name }}.core.sentry import init_sentry
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth.bootstrap import ensure_first_superuser
 {%- endif %}
+{%- if cookiecutter.use_llm_example == "yes" %}
+from {{ cookiecutter.package_name }}.domains.llm.service import close_anthropic_client
+{%- endif %}
 {%- if cookiecutter.use_mcp == "yes" %}
 from {{ cookiecutter.package_name }}.mcp.server import create_mcp_app
 {%- endif %}
@@ -88,6 +91,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stack.callback(shutdown_observability, app)  # flush batch exporters last
 {%- endif %}
         stack.push_async_callback(dispose_db)
+{%- if cookiecutter.use_llm_example == "yes" %}
+        stack.push_async_callback(close_anthropic_client)
+{%- endif %}
 {%- if cookiecutter.use_redis == "yes" %}
         # Built once here; redis-py opens no socket until the first command.
         app.state.redis = create_redis_client()

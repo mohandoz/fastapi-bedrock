@@ -75,3 +75,19 @@ describe what changed between tags, and the demo repository (a continuously
 rendered default configuration) lets you read tag-to-tag diffs of *generated
 output* — often the quickest way to see what an update will do to your
 project before running it.
+
+### Initial migration compatibility
+
+Freshly generated projects include an option-aware initial Alembic revision.
+If an older generated project already has any real file in
+`migrations/versions/`, do **not** graft the template's
+`2026-09-01_initial_schema.py` in as a second base revision: keep your existing
+history and omit that incoming file from the cruft update. Add future model
+changes as normal forward revisions.
+
+If an older project has no Alembic history but has a database created by local
+`create_all`, first compare that database with the current SQLModel metadata and
+establish a reviewed baseline for that existing schema. Applying the new
+create-table revision directly would fail on the existing tables; stamping an
+unverified schema would hide drift. New/empty databases can apply the shipped
+revision normally with `make migrate`.

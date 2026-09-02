@@ -152,17 +152,20 @@ JWT bearer authentication using the OAuth2 password flow:
 - `POST {{ '{prefix}' }}/auth/forgot-password` — email a password-reset link (always 202)
 - `POST {{ '{prefix}' }}/auth/reset-password` — set a new password with the emailed token
 - `POST {{ '{prefix}' }}/auth/verify-email` — confirm an email address
+- `POST {{ '{prefix}' }}/auth/resend-verification` — replace a lost or expired verification link (always 202)
 
 where `{{ '{prefix}' }}` is `{{ '/api/v1' }}` by default. The `{{ cookiecutter.first_entity }}`
 routes are protected and require a valid access token.
 
-Outbound email is logged instead of sent until `EMAILS_ENABLED=true` with
-`SMTP_*` configured (`core/email.py`), so local development needs no SMTP
-server. Reset and verification links point at `FRONTEND_URL` and expire after
+With `EMAILS_ENABLED=false`, local development logs outbound email bodies and
+needs no SMTP server; staging and production emit metadata-only delivery
+warnings, never token-bearing bodies. Set `EMAILS_ENABLED=true` with `SMTP_*`
+configured to deliver (`core/email.py`). Reset and verification links point at
+`FRONTEND_URL` and expire after
 `EMAIL_TOKEN_EXPIRE_MINUTES`; set `REQUIRE_EMAIL_VERIFICATION=true` to block
 login until the address is verified.
 
-Refresh tokens rotate: each refresh invalidates the presented token, and
+Refresh tokens rotate atomically: each refresh invalidates the presented token, and
 reusing an already-rotated token is treated as theft — the whole token family
 is revoked (RFC 6819 reuse detection).
 {%- if cookiecutter.use_redis == "yes" %}
@@ -172,7 +175,9 @@ Families are tracked in the `refresh_tokens` table; expired rows are purged as
 users log in.
 {%- endif %}
 Tokens carry `aud`/`iss` claims (`JWT_AUDIENCE`/`JWT_ISSUER`), so another
-service sharing the same `SECRET_KEY` still rejects them.
+service sharing the same `SECRET_KEY` still rejects them. They also carry an
+account version: password changes/resets invalidate every old access/refresh
+token, and reset links become single-use.
 
 Set `FIRST_SUPERUSER_EMAIL` and `FIRST_SUPERUSER_PASSWORD` to create (or
 promote) a superuser at startup; guard admin routes with the `CurrentSuperuser`
@@ -183,8 +188,8 @@ dependency from `domains/auth/dependencies.py`.
 
 Every route is limited to `RATE_LIMIT` (default `100/minute`) per client IP.
 {%- if cookiecutter.use_auth == "yes" %}
-`POST {{ '{prefix}' }}/auth/register` is stricter (`5/minute`): registration is
-unauthenticated and abusable.
+Registration, login, refresh, forgot/reset-password and verification use
+stricter endpoint-specific limits.
 {%- endif %}
 {%- if cookiecutter.use_redis == "yes" %}
 Counters live in Redis, so limits are shared across workers and replicas and
@@ -210,13 +215,14 @@ only from that proxy.
 
 Alembic owns the schema in staging and production. Locally, tables are
 auto-created at startup for convenience (`DB_AUTO_CREATE`, on by default only
-when `ENVIRONMENT=local`). Generate revisions against a database that contains
-only what migrations created — an auto-created schema yields an empty revision
-(see `migrations/README`):
+when `ENVIRONMENT=local`). The generated project ships an option-aware initial
+revision; apply it before serving a fresh deployed database. Generate later
+revisions against a database containing only what migrations created (see
+`migrations/README`):
 
 ```bash
-make revision m="create {{ cookiecutter.first_entity }} table"
 make migrate
+make revision m="describe the next model change"
 ```
 {% if cookiecutter.use_docker == "yes" %}
 ## Docker
@@ -243,7 +249,8 @@ data volume, so back up first.
 `deploy/k8s/` ships minimal production-shaped Kubernetes manifests: probes
 wired to `/api/v1/health` (liveness) and `/api/v1/ready` (readiness),
 graceful-shutdown timing matched to the image, a non-root read-only
-securityContext, file-mounted secrets and a replicated-safe migration Job.
+securityContext, externally provisioned file-mounted secrets, a migration-first
+overlay and optional Redis/Temporal worker Deployments.
 See [deploy/README.md](deploy/README.md).
 {% endif %}
 {%- if cookiecutter.use_temporal == "yes" %}
@@ -290,15 +297,18 @@ injected via `RedisClient`.
 - **Caching** — `core/cache.py`, a typed cache-aside helper
   (`cache.get_or_set(...)`), injected with `CacheDep`.
 - **Distributed lock** — `core/lock.py` (`distributed_lock(...)`) for
-  leader-election / running a scheduled job once across replicas.
+  lease-bounded cross-replica mutual exclusion. Finish work inside the TTL and
+  use fencing/idempotency for irreversible exactly-once effects.
 - **Durable events (transactional outbox)** — write an event in the *same DB
   transaction* as your domain change with `enqueue_event(session, ...)`; the
   events worker's **relay** forwards committed rows to a **Redis Stream** using
   the **CloudEvents 1.0** envelope, and a consumer group processes them
   (at-least-once, `XACK` + `XAUTOCLAIM`). The CloudEvents `id` is the idempotency
   key. This removes the dual-write race between the database and the broker.
-  The consumer periodically reclaims stale pending entries (`XAUTOCLAIM`) and
-  trims fully processed ones (`XTRIM MINID`); `REDIS_STREAM_MAXLEN` (default
+  The consumer periodically reclaims stale pending entries (`XAUTOCLAIM`),
+  moves poison messages to `REDIS_DEAD_LETTER_STREAM` after
+  `REDIS_MAX_DELIVERY_ATTEMPTS`, and trims fully processed ones (`XTRIM MINID`);
+  `REDIS_STREAM_MAXLEN` (default
   1,000,000) is only an approximate hard cap on unprocessed backlog — monitor
   `XLEN`/`XPENDING`. Requires Redis >= 6.2.
 
@@ -483,7 +493,8 @@ degrading:
 - `OPEN_REGISTRATION` (default `true`) controls public signup; set it to `false`
   for invite-only deployments — `POST {{ '{prefix}' }}/auth/register` then
   returns 403.
-- `EMAILS_ENABLED=true` requires `SMTP_HOST` (rejected at boot otherwise).
+- `EMAILS_ENABLED=true` requires `SMTP_HOST`; outside local development it also
+  requires `SMTP_TLS=true`.
 {%- endif %}
 {%- if cookiecutter.use_rate_limiting == "yes" %}
 - Behind a proxy, set `FORWARDED_ALLOW_IPS` so rate limits key on real client

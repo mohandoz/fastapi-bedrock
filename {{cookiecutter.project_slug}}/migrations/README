@@ -1,9 +1,10 @@
 Async Alembic migrations for {{ cookiecutter.project_name }}.
 
-Alembic is the source of schema truth for every deployed environment. The local
-environment may instead auto-create tables at startup (DB_AUTO_CREATE, on by
-default only when ENVIRONMENT=local); staging and production must apply schema
-with `alembic upgrade head`{% if cookiecutter.use_docker == "yes" %} — the compose api service runs it on boot{% endif %}.
+Alembic is the source of schema truth for every deployed environment. The
+option-aware initial revision creates every table shipped by this generated
+project. The local environment may instead auto-create tables at startup
+(DB_AUTO_CREATE, on by default only when ENVIRONMENT=local); staging and
+production must apply schema with `alembic upgrade head`{% if cookiecutter.use_docker == "yes" %} — the compose api service runs it on boot{% endif %}.
 
 Create a new revision after changing models:
     make revision m="describe your change"
@@ -14,30 +15,22 @@ Apply migrations:
 Roll back the most recent migration:
     make downgrade
 
-Generating revisions
---------------------
+Generating later revisions
+--------------------------
 Autogenerate diffs the models against a live database, so it must run against
 a database containing ONLY what earlier migrations created. Tables auto-created
-by DB_AUTO_CREATE make autogenerate emit an empty revision. To generate the
-baseline revision (versions/ ships empty) or any later one cleanly:
+by DB_AUTO_CREATE can make autogenerate miss changes. To generate a later
+revision cleanly:
 {% if cookiecutter.use_docker == "yes" %}
     docker compose down -v   # discard the auto-created local schema
     make db-up
     make migrate             # bring the fresh database up to head
-    make revision m="baseline"
+    make revision m="describe the model change"
 {%- else %}
     1. Point DATABASE_URL at an empty database.
     2. make migrate          # bring it up to head
-    3. make revision m="baseline"
+    3. make revision m="describe the model change"
 {%- endif %}
 
 When you add a new domain, import its models module in migrations/env.py so
 its tables register on the metadata autogenerate compares against.
-{%- if cookiecutter.use_auth == "yes" %}
-
-Note on users.email: AuthService lowercases emails on register/login, so
-app-written rows arrive normalized. For defense in depth against out-of-band
-writes, make the unique index case-insensitive in your first revision
-(works on PostgreSQL and SQLite >= 3.9):
-    op.create_index("ux_users_email_lower", "users", [sa.text("lower(email)")], unique=True)
-{%- endif %}

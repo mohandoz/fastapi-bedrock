@@ -23,9 +23,18 @@ class {{ entity_class }}Update(SQLModel):
     values the create path would reject (or the database would refuse).
     """
 
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=2000)
-    is_active: bool | None = None
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="Replacement display name.",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Replacement description; null clears it.",
+    )
+    is_active: bool | None = Field(default=None, description="Replacement active state.")
 
     @field_validator("name", "is_active")
     @classmethod

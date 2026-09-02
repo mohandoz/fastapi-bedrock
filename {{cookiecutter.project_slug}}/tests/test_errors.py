@@ -111,8 +111,12 @@ async def test_unhandled_error_renders_sanitized_problem(
 ) -> None:
     recorder = RecordingLogger()
     monkeypatch.setattr(middleware_module, "logger", recorder)
+    monkeypatch.setattr(settings, "cors_origins", ["https://app.example"])
 
-    response = await error_client.get("/boom", headers={"X-Request-ID": "err-42"})
+    response = await error_client.get(
+        "/boom",
+        headers={"X-Request-ID": "err-42", "Origin": "https://app.example"},
+    )
 
     assert response.status_code == 500
     assert response.headers["content-type"] == "application/problem+json"
@@ -128,6 +132,8 @@ async def test_unhandled_error_renders_sanitized_problem(
     # yet must still carry the request id and security headers.
     assert response.headers["X-Request-ID"] == "err-42"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Access-Control-Allow-Origin"] == "https://app.example"
+    assert response.headers["Access-Control-Allow-Credentials"] == "true"
     # ...and the access log still records the failed request.
     completed = [fields for event, fields in recorder.events if event == "request_completed"]
     assert completed and completed[0]["status_code"] == 500

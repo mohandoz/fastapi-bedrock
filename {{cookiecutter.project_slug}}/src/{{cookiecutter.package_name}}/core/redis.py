@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import urlsplit
 
 import redis.asyncio as redis
 import structlog
@@ -21,7 +22,14 @@ def create_redis_client() -> redis.Redis:
     owns its pool (sized by ``max_connections``); close it once, on shutdown,
     with ``aclose()``. Reused by the API, the events worker and Temporal.
     """
-    logger.info("redis.client.create", url=settings.redis_url)
+    parsed = urlsplit(settings.redis_url)
+    logger.info(
+        "redis.client.create",
+        host=parsed.hostname,
+        port=parsed.port,
+        database=parsed.path.lstrip("/") or "0",
+        tls=parsed.scheme == "rediss",
+    )
     return redis.from_url(
         settings.redis_url,
         max_connections=settings.redis_max_connections,

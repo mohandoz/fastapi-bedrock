@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any, cast
+from unittest.mock import Mock
 
 import pytest
 import redis.asyncio as redis
@@ -14,18 +15,37 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from {{ cookiecutter.package_name }}.core import redis as redis_module
 from {{ cookiecutter.package_name }}.core.cache import Cache
 from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.lock import distributed_lock
+from {{ cookiecutter.package_name }}.core.redis import create_redis_client
 from {{ cookiecutter.package_name }}.events import consumer as consumer_module
 from {{ cookiecutter.package_name }}.events import relay as relay_module
-from {{ cookiecutter.package_name }}.events.consumer import consume, ensure_group, reclaim_stale
+from {{ cookiecutter.package_name }}.events.consumer import consume, ensure_group, handle_event, reclaim_stale
 from {{ cookiecutter.package_name }}.events.models import OutboxEvent
 from {{ cookiecutter.package_name }}.events.publisher import enqueue_event, publish_event
 from {{ cookiecutter.package_name }}.events.relay import relay_outbox
 
 
 # --- Cache -----------------------------------------------------------------
+async def test_redis_connection_log_redacts_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = Mock()
+    monkeypatch.setattr(redis_module, "logger", logger)
+    monkeypatch.setattr(settings, "redis_url", "redis://user:secret@cache.internal:6380/4")
+    client = create_redis_client()
+    await client.aclose()
+    kwargs = logger.info.call_args.kwargs
+    assert kwargs == {
+        "host": "cache.internal",
+        "port": 6380,
+        "database": "4",
+        "tls": False,
+    }
+
+
 async def test_cache_set_get(redis_client: redis.Redis) -> None:
     cache = Cache(redis_client)
     await cache.set("k", {"a": 1}, ttl=60)
@@ -65,6 +85,17 @@ async def test_distributed_lock(redis_client: redis.Redis) -> None:
 
 
 # --- Streams (CloudEvents) -------------------------------------------------
+async def test_default_event_handler_does_not_log_payload_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = Mock()
+    monkeypatch.setattr(consumer_module, "logger", logger)
+    await handle_event("account.updated", {"token": "secret"}, event_id="evt-1")
+    kwargs = logger.info.call_args.kwargs
+    assert kwargs["payload_fields"] == ["token"]
+    assert "payload" not in kwargs
+
+
 async def test_publish_and_read_event(redis_client: redis.Redis) -> None:
     await ensure_group(redis_client)
     message_id = await publish_event(redis_client, "item.created", {"id": "abc"})
@@ -139,6 +170,58 @@ async def test_consume_failure_leaves_pending_until_reclaimed(
     assert pending["pending"] == 0  # reclaimed, re-dispatched, and acked
     assert len(delivered) == 2
     assert delivered[0] == delivered[1]  # same CloudEvents id across redeliveries
+
+
+async def test_poison_event_moves_to_dead_letter_stream(
+    redis_client: redis.Redis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+
+    async def failing_handle(event_type: str, payload: dict[str, object], *, event_id: str) -> None:
+        stop.set()
+        raise RuntimeError("permanent handler failure")
+
+    monkeypatch.setattr(consumer_module, "handle_event", failing_handle)
+    monkeypatch.setattr(settings, "redis_max_delivery_attempts", 2)
+    await publish_event(redis_client, "item.poisoned", {"id": "poison"})
+    await asyncio.wait_for(consume(redis_client, "consumer-1", stop=stop, block_ms=500), timeout=15)
+    await reclaim_stale(redis_client, "consumer-2", min_idle_ms=0)
+
+    pending = cast(
+        "Any",
+        await redis_client.xpending(settings.redis_stream, settings.redis_consumer_group),
+    )
+    assert pending["pending"] == 0
+    assert await redis_client.xlen(settings.redis_dead_letter_stream) == 1
+
+
+async def test_one_delivery_attempt_dead_letters_without_reclaim(
+    redis_client: redis.Redis,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+    calls = 0
+
+    async def failing_handle(event_type: str, payload: dict[str, object], *, event_id: str) -> None:
+        nonlocal calls
+        calls += 1
+        stop.set()
+        raise RuntimeError("permanent handler failure")
+
+    monkeypatch.setattr(consumer_module, "handle_event", failing_handle)
+    monkeypatch.setattr(settings, "redis_max_delivery_attempts", 1)
+    await publish_event(redis_client, "item.poisoned", {"id": "single-attempt"})
+
+    await asyncio.wait_for(consume(redis_client, "consumer-1", stop=stop, block_ms=500), timeout=15)
+
+    pending = cast(
+        "Any",
+        await redis_client.xpending(settings.redis_stream, settings.redis_consumer_group),
+    )
+    assert calls == 1
+    assert pending["pending"] == 0
+    assert await redis_client.xlen(settings.redis_dead_letter_stream) == 1
 
 
 # --- Transactional outbox --------------------------------------------------

@@ -7,9 +7,16 @@ from typing import Annotated
 
 import structlog
 from anthropic import AsyncAnthropic
+{% if cookiecutter.use_rate_limiting == "yes" -%}
+from fastapi import APIRouter, Depends, Request
+{%- else -%}
 from fastapi import APIRouter, Depends
+{%- endif %}
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 
+{% if cookiecutter.use_rate_limiting == "yes" -%}
+from {{ cookiecutter.package_name }}.core.rate_limit import limiter
+{%- endif %}
 {% if cookiecutter.use_auth == "yes" -%}
 from {{ cookiecutter.package_name }}.domains.auth.dependencies import get_current_active_user
 {% endif -%}
@@ -51,7 +58,16 @@ router = APIRouter(
     summary="Create a structured completion",
     response_description="The schema-validated completion plus token usage.",
 )
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+@limiter.limit("20/minute")
+async def create_completion(
+    request: Request,
+    data: CompletionRequest,
+    service: ServiceDep,
+) -> CompletionResponse:
+{%- else %}
 async def create_completion(data: CompletionRequest, service: ServiceDep) -> CompletionResponse:
+{%- endif %}
     """Answer the prompt with output guaranteed to match the Completion schema."""
     return await service.complete(data)
 
@@ -62,9 +78,18 @@ async def create_completion(data: CompletionRequest, service: ServiceDep) -> Com
     summary="Stream a completion over SSE",
     response_description="A text/event-stream of delta events, closed by one done event.",
 )
+{%- if cookiecutter.use_rate_limiting == "yes" %}
+@limiter.limit("20/minute")
+async def stream_completion(
+    request: Request,
+    data: CompletionRequest,
+    service: ServiceDep,
+) -> AsyncIterator[ServerSentEvent]:
+{%- else %}
 async def stream_completion(
     data: CompletionRequest, service: ServiceDep
 ) -> AsyncIterator[ServerSentEvent]:
+{%- endif %}
     """Stream the completion as Server-Sent Events.
 
     Emits `delta` events carrying text increments, then one `done` event with

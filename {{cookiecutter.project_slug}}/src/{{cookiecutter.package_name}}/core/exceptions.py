@@ -26,6 +26,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
+from {{ cookiecutter.package_name }}.core.config import settings
 from {{ cookiecutter.package_name }}.core.middleware import (
     REQUEST_ID_HEADER,
     apply_security_headers,
@@ -109,6 +110,20 @@ class ForbiddenError(AppError):
     title = "Forbidden"
     problem_type = "urn:problem-type:forbidden"
     detail = "Operation not permitted"
+
+
+def _apply_cors_to_unhandled_error(request: Request, response: Response) -> None:
+    """Mirror CORSMiddleware on 500s rendered outside the user middleware stack."""
+    origin = request.headers.get("origin")
+    if origin is None or not settings.cors_origins:
+        return
+    if "*" in settings.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return
+    if origin in settings.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers.add_vary_header("Origin")
 
 
 def _problem(
@@ -214,4 +229,5 @@ def add_exception_handlers(app: FastAPI) -> None:
         if request_id is not None:
             response.headers[REQUEST_ID_HEADER] = request_id
         apply_security_headers(response.headers)
+        _apply_cors_to_unhandled_error(request, response)
         return response

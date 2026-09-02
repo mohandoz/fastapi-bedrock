@@ -10,15 +10,14 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel import SQLModel
 
-from {{ cookiecutter.package_name }}.core.config import settings
-
 # Import model modules so their tables register on SQLModel.metadata.
 # core.models must come first: it sets the constraint naming convention.
 from {{ cookiecutter.package_name }}.core import models as core_models  # noqa: F401
-from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }} import models  # noqa: F401
+from {{ cookiecutter.package_name }}.core.config import settings
 {%- if cookiecutter.use_auth == "yes" %}
 from {{ cookiecutter.package_name }}.domains.auth import models as auth_models  # noqa: F401
 {%- endif %}
+from {{ cookiecutter.package_name }}.domains.{{ cookiecutter.first_entity }} import models  # noqa: F401
 {%- if cookiecutter.use_redis == "yes" %}
 from {{ cookiecutter.package_name }}.events import models as event_models  # noqa: F401
 {%- endif %}

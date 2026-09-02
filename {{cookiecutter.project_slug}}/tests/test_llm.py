@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import anthropic
-import httpx
+import httpx2
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
@@ -35,7 +35,7 @@ from {{ cookiecutter.package_name }}.main import create_app
 
 API = settings.api_v1_prefix
 
-ANTHROPIC_REQUEST = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+ANTHROPIC_REQUEST = httpx2.Request("POST", "https://api.anthropic.com/v1/messages")
 
 
 # --- Fakes mirroring the slice of the SDK surface the service uses ----------
@@ -261,7 +261,7 @@ async def test_complete_connection_error_renders_502() -> None:
 
 
 async def test_complete_rate_limit_error_renders_502() -> None:
-    upstream_response = httpx.Response(429, request=ANTHROPIC_REQUEST)
+    upstream_response = httpx2.Response(429, request=ANTHROPIC_REQUEST)
     fake = FakeAnthropic(
         messages=FakeMessages(
             parse_error=anthropic.RateLimitError(

@@ -1,5 +1,8 @@
-"""A Redis-backed distributed lock for leader election / cross-replica mutual
-exclusion (e.g. running a scheduled job exactly once across many instances)."""
+"""A lease-bounded Redis lock for leader election / cross-replica exclusion.
+
+The lease can expire during a long event-loop stall or network partition, so
+irreversible effects still need an idempotency key or fencing token.
+"""
 
 from __future__ import annotations
 
@@ -26,7 +29,7 @@ async def distributed_lock(
 
     Yields ``True`` if the lock was acquired, ``False`` otherwise. The lock is
     released on exit and auto-expires after ``ttl`` seconds, so a crashed holder
-    never deadlocks the others::
+    never deadlocks the others. Work must complete within ``ttl``::
 
         async with distributed_lock(redis, "nightly-report") as acquired:
             if acquired:
@@ -40,6 +43,11 @@ async def distributed_lock(
         yield acquired
     finally:
         if acquired:
-            with contextlib.suppress(LockError):
+            try:
                 await lock.release()
                 logger.debug("lock.released", name=name)
+            except (LockError, redis.RedisError):
+                # Ownership loss and release-time outages are non-fatal: the
+                # bounded lease expires on its own. Raising here would turn a
+                # completed protected operation into a false failure/retry.
+                logger.warning("lock.release_failed", name=name)
