@@ -1,0 +1,376 @@
+# fastapi-bedrock
+
+> Production-ready FastAPI + Domain-Driven Design cookiecutter template: async SQLModel, JWT auth, Temporal workflows, transactional outbox events, OpenTelemetry — composed feature by feature.
+
+fastapi-bedrock is a Cookiecutter template for production-ready FastAPI services organised as Domain-Driven Design vertical slices. Generated projects ship with async SQLModel/SQLAlchemy 2.0 on PostgreSQL, Alembic migrations, JWT auth with refresh-token rotation, structlog JSON logging, Ruff, strict mypy, pytest with testcontainers, and optional per-flag modules: Docker, GitHub Actions CI, rate limiting, Sentry, Temporal durable workflows, Redis (cache + transactional outbox events), OpenTelemetry observability and a resilient HTTP client. It is not related to Amazon Bedrock.
+
+# Documentation
+
+# fastapi-bedrock
+
+*The solid, layered foundation you build your FastAPI service on.*
+
+A [Cookiecutter](https://cookiecutter.readthedocs.io/) template for production-ready **FastAPI** services organised with a **Domain-Driven Design** (vertical-slice) layout. Every generated project ships fully wired: async database access, a clean repository/service layering, JWT authentication, tests against a real PostgreSQL, linting, strict typing, Docker and CI — nothing to bolt on afterwards.
+
+Not related to Amazon Bedrock
+
+*Bedrock* here means what it says on the tin — the solid layer of rock you build on. This project is a template for FastAPI backend services and has no connection to AWS's Amazon Bedrock LLM platform.
+
+## Why this template
+
+- **Backend-first.** No frontend to delete. The output is an API service the way platform and microservice teams actually deploy them.
+- **Composable.** Nine `use_*` flags add or remove whole modules — auth, Docker, CI, rate limiting, Sentry, Temporal, Redis, OpenTelemetry, an outbound HTTP client — and every combination is exercised in the template's own CI matrix. See the [options matrix](https://mohandoz.github.io/fastapi-bedrock/options/index.md).
+- **Opinionated where it pays.** Repository → service → router layering, RFC 9457 `problem+json` errors, refresh-token rotation with reuse detection, a transactional outbox for events, structlog JSON logging with request IDs. See [architecture](https://mohandoz.github.io/fastapi-bedrock/architecture/index.md).
+- **Updatable.** Generate with [cruft](https://cruft.github.io/cruft/) and later pull template improvements into your project as a reviewable diff. See [upgrading](https://mohandoz.github.io/fastapi-bedrock/upgrading/index.md).
+- **Tested like production.** pytest + testcontainers run the suite against a real PostgreSQL — no SQLite stand-in — and `mypy --strict` covers `src` *and* `tests`.
+
+## The stack
+
+| Concern             | Choice                                                                                    |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| Language            | Python 3.12 / 3.13 / 3.14                                                                 |
+| Packaging / env     | [uv](https://docs.astral.sh/uv/) (PEP 621 + PEP 735)                                      |
+| Web framework       | [FastAPI](https://fastapi.tiangolo.com/)                                                  |
+| Data / ORM          | [SQLModel](https://sqlmodel.tiangolo.com/) on SQLAlchemy 2.0 async — PostgreSQL / asyncpg |
+| Migrations          | [Alembic](https://alembic.sqlalchemy.org/) (async)                                        |
+| Validation / config | Pydantic v2 + `pydantic-settings`                                                         |
+| Auth                | OAuth2 password flow, JWT access + refresh, Argon2 (`pwdlib`)                             |
+| Lint + format       | [Ruff](https://docs.astral.sh/ruff/)                                                      |
+| Type checking       | [mypy](https://mypy.readthedocs.io/) (strict, incl. tests)                                |
+| Tests               | pytest, httpx, polyfactory, testcontainers                                                |
+| Logging             | [structlog](https://www.structlog.org/) (JSON) + request IDs                              |
+| Runtime extras      | Docker + compose, CI, rate limiting, Sentry, Temporal, Redis, OTel/Grafana                |
+
+## Where to go next
+
+- [Quickstart](https://mohandoz.github.io/fastapi-bedrock/quickstart/index.md) — generate and run a project in a few minutes.
+- [Options matrix](https://mohandoz.github.io/fastapi-bedrock/options/index.md) — what each prompt adds to the generated code.
+- [Architecture](https://mohandoz.github.io/fastapi-bedrock/architecture/index.md) — the vertical-slice layout and request flow.
+- [Recipes](https://mohandoz.github.io/fastapi-bedrock/recipes/index.md) — integration guides shipped inside every project.
+- [Upgrading with cruft](https://mohandoz.github.io/fastapi-bedrock/upgrading/index.md) — keep generated projects current.
+- [How it compares](https://github.com/mohandoz/fastapi-bedrock#how-it-compares) — an honest side-by-side with `full-stack-fastapi-template` and `litestar-fullstack`.
+
+# Quickstart
+
+## Prerequisites
+
+- [uv](https://docs.astral.sh/uv/) — used both to run the generator (`uvx`) and to manage the generated project.
+- Docker — the test suite starts a throwaway PostgreSQL via [testcontainers](https://testcontainers.com/), and local development uses a compose-managed database when `use_docker=yes`.
+
+## Generate a project
+
+```
+# recommended: cruft, so the project can pull template updates later
+uvx cruft create https://github.com/mohandoz/fastapi-bedrock
+
+# plain cookiecutter works too (no update tracking)
+uvx cookiecutter gh:mohandoz/fastapi-bedrock
+```
+
+You will be prompted for the project name, author details, target Python version, the name of your first domain entity, and the nine `use_*` feature flags — the [options matrix](https://mohandoz.github.io/fastapi-bedrock/options/index.md) explains exactly what each one adds.
+
+When generation finishes, a post-generation hook prunes the modules you disabled, initialises a git repository, runs `uv sync` and makes an initial commit. Set the environment variable `SKIP_UV_SYNC=1` to skip dependency installation (you must then run `uv sync` yourself before the first push, so `uv.lock` gets committed).
+
+### Non-interactive generation
+
+Every variable can be supplied on the command line, which is handy for CI and for trying variants quickly:
+
+```
+uvx cookiecutter gh:mohandoz/fastapi-bedrock --no-input \
+  project_name="Order Service" \
+  use_temporal=yes use_redis=yes use_observability=yes
+```
+
+## Run it
+
+```
+cd <project_slug>
+make setup                  # deps, .env (+ generated SECRET_KEY), database, migrations, git hooks
+make run                    # uv run fastapi dev  ->  http://127.0.0.1:8000/docs
+```
+
+The interactive API docs live at `/docs`, health probes at `/api/v1/health` and `/api/v1/ready`.
+
+## The everyday loop
+
+```
+make test                   # pytest against a testcontainers PostgreSQL
+make lint                   # ruff check + format check
+make typecheck              # mypy --strict (src + tests)
+make check                  # all of the above
+make new-domain name=order  # scaffold a full vertical slice + tests
+make seed                   # fill the local database with demo data
+```
+
+With `use_docker=yes`, `docker compose up --build` starts the full stack, and `docker compose watch` gives an edit-and-reload loop inside Docker.
+
+## Next steps
+
+- Read the [architecture](https://mohandoz.github.io/fastapi-bedrock/architecture/index.md) page to understand the layout before adding your first real domain.
+- Skim the [recipes](https://mohandoz.github.io/fastapi-bedrock/recipes/index.md) — social login, admin UI, background-job guidance, anti-bot verification and passkeys are all written against the generated codebase.
+- If you generated with cruft, note the `.cruft.json` at the project root: it is what makes [template updates](https://mohandoz.github.io/fastapi-bedrock/upgrading/index.md) possible later.
+
+# Options matrix
+
+Cookiecutter asks for a handful of identity variables and eleven `use_*` feature flags. Every flag adds (or removes) a whole module — dependencies, source files, settings, compose services and tests together — and the template's own CI renders and checks the all-on, all-off and mixed combinations on every change, so any answer set produces a working project.
+
+## Identity variables
+
+| Variable                       | Description                                       | Default               |
+| ------------------------------ | ------------------------------------------------- | --------------------- |
+| `project_name`                 | Human-readable name                               | `FastAPI DDD Service` |
+| `project_slug`                 | Repo/folder name (derived)                        | `fastapi-ddd-service` |
+| `package_name`                 | Import package (derived)                          | `fastapi_ddd_service` |
+| `project_description`          | One-line description                              | —                     |
+| `author_name` / `author_email` | Used in `pyproject.toml` and the API contact info | —                     |
+| `version`                      | Initial version                                   | `0.1.0`               |
+| `python_version`               | Target Python (`3.13` / `3.14` / `3.12`)          | `3.13`                |
+| `first_entity`                 | First domain entity (lowercase snake)             | `item`                |
+
+A pre-generation hook validates the answers (e.g. `first_entity` must be a lowercase snake-case identifier that is not a Python keyword and not `auth`; `python_version` must be one of the supported minors) and fails generation early instead of producing a broken project.
+
+## Feature flags
+
+### `use_auth` — JWT authentication (default: `yes`)
+
+The full account lifecycle as a `domains/auth/` vertical slice:
+
+- **Routes** — register, login (OAuth2 password flow), refresh, logout, `/me` (read/export/delete, GDPR-shaped), password change / forgot / reset, email verification.
+- **Tokens** — JWT access + refresh with `iss`/`aud` binding; refresh tokens rotate atomically, and reuse of a rotated token revokes the whole token family (RFC 6819 reuse detection). Families live in Redis when `use_redis=yes`, otherwise in a `refresh_tokens` table. Password changes/resets advance an account version carried by every token, invalidating old sessions and making reset links single-use.
+- **Passwords** — Argon2 via `pwdlib`.
+- **Email** — password-reset and verification emails (`core/email.py`); full messages are logged only in local development. Other environments emit metadata-only warnings until `EMAILS_ENABLED=true`.
+- **Bootstrap** — `FIRST_SUPERUSER_EMAIL`/`FIRST_SUPERUSER_PASSWORD` create or promote a superuser at startup; `OPEN_REGISTRATION=false` makes deployments invite-only.
+- **Dependencies added** — `pyjwt`, `pwdlib[argon2]`, `jinja2`.
+
+Disable it for internal services that sit behind a gateway or use mTLS — the `first_entity` routes are then unprotected.
+
+### `use_docker` — containers (default: `yes`)
+
+- Multi-stage `Dockerfile` (uv-based, non-root) and `docker-compose.yml` with PostgreSQL (plus Temporal/Redis/LGTM services when those flags are on), all ports bound to `127.0.0.1`.
+- `docker compose watch` support for edit-and-reload inside containers.
+- `deploy/k8s/` production-shaped Kubernetes overlays: migration-first rollout, probes, non-root read-only securityContext, file-mounted secrets and optional Redis/Temporal worker Deployments.
+- A compose-based `.devcontainer/` (a single-container devcontainer remains when the flag is off).
+- `make db-up`, `make docker-up`, `make db-backup` / `db-restore` targets.
+
+Without Docker you point `DATABASE_URL` at your own PostgreSQL; the test suite still needs a Docker daemon for testcontainers.
+
+### `use_github_actions` — CI (default: `yes`)
+
+- `.github/workflows/ci.yml` in the generated project: Ruff, mypy, pytest (with the testcontainers PostgreSQL) and, when `use_docker=yes`, a Docker build smoke test.
+- Dependabot config and the PR template remain even when the flag is off — only the workflows are Actions-specific.
+
+### `use_rate_limiting` — slowapi (default: `yes`)
+
+- Global `RATE_LIMIT` (default `100/minute`) per client IP; register, forgot/reset-password, login, refresh, verification and metered LLM routes carry stricter endpoint-specific limits.
+- Counters are shared across workers via Redis when `use_redis=yes`, otherwise in-memory per process.
+- Adds `slowapi`; documents the `FORWARDED_ALLOW_IPS` / `--proxy-headers` requirements for running behind a proxy.
+
+### `use_sentry` — error tracking (default: `no`)
+
+- `core/sentry.py` initialises `sentry-sdk[fastapi]` when `SENTRY_DSN` is set; traces sampling is configurable (`SENTRY_TRACES_SAMPLE_RATE`).
+
+### `use_temporal` — durable workflows (default: `no`)
+
+- `temporal/` module: client, worker (`make worker`), a demo workflow + activity wired to the first entity, and a router to start it.
+- Workflows stay deterministic; side effects (including DB access) live in activities.
+- With `use_docker=yes`, compose also starts the Temporal server, Web UI (http://localhost:8080) and a worker container.
+- Adds `temporalio`.
+
+### `use_redis` — cache, outbox events, locks (default: `no`)
+
+- **Cache** — typed cache-aside helper (`core/cache.py`, `CacheDep`).
+- **Distributed lock** — `core/lock.py` for lease-bounded cross-replica mutual exclusion. Work must finish inside the TTL; irreversible exactly-once effects still need fencing/idempotency.
+- **Transactional outbox** — `enqueue_event(session, ...)` writes events in the same DB transaction as your domain change; a relay forwards committed rows to a Redis Stream (CloudEvents 1.0 envelope) and a consumer group processes them at-least-once (`make events-worker`). Poison messages move to a dead-letter stream after `REDIS_MAX_DELIVERY_ATTEMPTS`.
+- **Idempotency-Key** — replayable POST responses per the IETF `Idempotency-Key` draft, snapshots stored in Redis.
+- Upgrades other flags: shared rate-limit counters, Redis-backed refresh-token families, a Redis testcontainer in the test suite.
+- Adds `redis[hiredis]`.
+
+### `use_observability` — OpenTelemetry (default: `no`)
+
+- `core/observability.py` exports traces, metrics and logs over OTLP (`OTEL_ENABLED=true`); FastAPI and SQLAlchemy are auto-instrumented, plus Redis and httpx when those flags are also on.
+- With `use_docker=yes`, compose starts `grafana/otel-lgtm` — Collector, Loki, Tempo, Prometheus and Grafana pre-provisioned; logs carry `trace_id`/`span_id` so Loki links straight to Tempo traces.
+- Adds the `opentelemetry-*` SDK, OTLP exporter and instrumentation packages.
+
+### `use_http_client` — resilient outbound HTTP (default: `no`)
+
+- `core/http.py` wraps `httpx.AsyncClient` with timeouts, retries (via `stamina`) and a circuit breaker; built once on `app.state`, injected with `HttpClientDep`. Retries fire on network errors and 5xx, never 4xx.
+- Adds `stamina` (httpx already ships via `fastapi[standard]`).
+
+### `use_mcp` — MCP server for AI agents (default: `no`)
+
+- Mounts a [FastMCP v3](https://gofastmcp.com/) server at `/mcp` (streamable HTTP) with curated tools over the `first_entity` service layer — `list_*`, `get_*` and `create_*` (`src/<package>/mcp/server.py`). Tools are hand-picked over services, never auto-generated from every route.
+- With `use_auth=yes`, requests must carry the same bearer JWT as the REST API (refresh tokens are rejected). Without auth the endpoint is unauthenticated — the pre-gen hook warns against exposing it publicly.
+- Adds `fastmcp`.
+
+### `use_llm_example` — Anthropic LLM domain (default: `no`)
+
+- Scaffolds `domains/llm/`: `POST /llm/complete` (structured output via the Anthropic SDK's `messages.parse`) and `POST /llm/stream` (native FastAPI SSE streaming), with settings `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` / `LLM_*`.
+- Testing is two-tier: deterministic faked-SDK tests run in CI, plus an opt-in [pydantic-evals](https://ai.pydantic.dev/evals/) lane against the live API (`make evals`). Nothing is required at generation time; the API key is only needed at runtime and for evals.
+- Adds `anthropic` (runtime) and `pydantic-evals` (dev).
+
+## Choosing a combination
+
+| You are building…                         | Suggested answers                                                                              |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| A public API with accounts                | defaults (`use_auth`, `use_docker`, CI, rate limiting)                                         |
+| An internal microservice behind a gateway | `use_auth=no`, keep Docker + CI; add `use_observability=yes`                                   |
+| An event-driven service                   | `use_redis=yes` (outbox + streams), consider `use_temporal=yes` for long-running orchestration |
+| A service calling flaky third parties     | `use_http_client=yes`, `use_observability=yes`                                                 |
+| A minimal teaching/example project        | everything `no` — you still get the DDD slice, tests, Alembic, structlog, Ruff and strict mypy |
+
+Flags interact but never conflict: for example `use_redis` upgrades rate limiting and auth storage when those are enabled, and observability instruments whichever of Redis/httpx are present. Any combination renders, lints, type-checks and passes its tests.
+
+# Architecture
+
+The generated project follows a **repository → service → router** flow with each domain as a self-contained vertical slice.
+
+```
+flowchart LR
+    client((Client)) --> mw["middleware<br>request-id, security headers,<br>CORS, body-size limit"]
+    mw --> api["api router<br>/api/v1"]
+    api --> health["/health, /ready"]
+    api --> auth["auth router (JWT)"]
+    api --> dom["&lt;entity&gt; router"]
+    auth --> asvc["auth service"]
+    dom --> svc["&lt;entity&gt; service"]
+    asvc --> urepo["user repository"]
+    svc --> repo["&lt;entity&gt; repository"]
+    urepo --> db[(PostgreSQL)]
+    repo --> db
+    svc -.->|outbox event| stream[(Redis Stream)]
+    svc -.->|start workflow| temporal["Temporal"]
+```
+
+*Dashed arrows are optional slices (`use_redis`, `use_temporal`); the auth slice ships with `use_auth=yes`.*
+
+## Directory layout
+
+```
+src/<package>/
+├── main.py                 # app factory, lifespan, middleware
+├── core/                   # cross-cutting infrastructure
+│   ├── config.py           # pydantic-settings, fail-fast production checks
+│   ├── database.py         # async engine + session dependency
+│   ├── repository.py       # generic BaseRepository[Model]
+│   ├── security.py         # password hashing + JWT     (use_auth)
+│   ├── logging.py          # structlog configuration
+│   ├── middleware.py       # request-id middleware
+│   └── exceptions.py       # domain errors + RFC 9457 handlers
+├── api/
+│   ├── router.py           # aggregates every domain router under /api/v1
+│   └── health.py           # /health and /ready probes
+├── domains/
+│   ├── auth/               # User model, JWT login/refresh   (use_auth)
+│   └── <entity>/           # models · schemas · repository · service · router
+├── events/                 # outbox relay + Streams consumer (use_redis)
+└── temporal/               # client, worker, workflows       (use_temporal)
+```
+
+## The layering rule
+
+Business logic never touches the database directly:
+
+- **Routers** own HTTP: request/response schemas, status codes, dependencies.
+- **Services** own business logic and transactions; they raise typed domain errors (`NotFoundError`, `ConflictError`, …) that handlers render as RFC 9457 `application/problem+json`.
+- **Repositories** own persistence: thin classes over a generic `BaseRepository[Model]`, so a domain is trivial to unit-test and the persistence layer stays swappable.
+
+Every domain repeats the same five files (`models`, `schemas`, `repository`, `service`, `router`), so any slice is navigable once you have read one. `make new-domain name=order` scaffolds a complete new slice plus tests.
+
+## Cross-cutting behaviour
+
+- **Errors** — every error response is an RFC 9457 problem document with a stable `type` URN; validation failures add a field-level `errors` array.
+- **Logging** — structlog emits one JSON `request_completed` event per request; every response carries an `X-Request-ID` header.
+- **Config** — `pydantic-settings` with fail-fast validation: unsafe production configuration (default `SECRET_KEY`, `DEBUG=true`, wildcard `ALLOWED_HOSTS`) is rejected at boot rather than silently degraded.
+- **Migrations** — Alembic owns the schema in staging/production; locally, tables auto-create at startup for convenience (`DB_AUTO_CREATE`, forced off outside `local`).
+- **Events (optional)** — the transactional outbox removes the dual-write race: events are written in the same transaction as the domain change and relayed to a Redis Stream in a CloudEvents 1.0 envelope, consumed at-least-once with `XACK`/`XAUTOCLAIM`.
+- **Workflows (optional)** — Temporal for durable, retried, long-running orchestration; the shipped recipe on background work explains when to use `BackgroundTasks` vs the outbox vs Temporal.
+
+## Testing philosophy
+
+Tests spin up a real PostgreSQL container (testcontainers) and drive the API through an async httpx client — behaviour matches production instead of a SQLite stand-in. `mypy --strict` covers `src` and `tests`, and Ruff enforces lint + format. `make check` runs everything.
+
+# Recipes
+
+Every generated project ships a `docs/recipes/` directory: integration guides written **against the generated codebase** — they name the real modules, settings blocks and service methods, so the diff between the recipe and your project is minimal. They are rendered with your project's package name during generation.
+
+The sources live in the template at [`{{cookiecutter.project_slug}}/docs/recipes/`](https://github.com/mohandoz/fastapi-bedrock/tree/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/recipes) (the links below point there; in your generated project the same files are in `docs/recipes/` with all placeholders filled in).
+
+## Shipped in every project
+
+- **[Background work: which tool?](https://github.com/mohandoz/fastapi-bedrock/blob/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/recipes/background-jobs.md)** — `BackgroundTasks` vs the transactional outbox vs Temporal, with a decision table and one worked example of each. Read it before adding any async work.
+- **[Admin back-office with SQLAdmin](https://github.com/mohandoz/fastapi-bedrock/blob/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/recipes/admin-sqladmin.md)** — a model-driven admin UI over the existing SQLModel tables.
+- **[Feature flags with OpenFeature](https://github.com/mohandoz/fastapi-bedrock/blob/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/recipes/feature-flags-openfeature.md)** — vendor-neutral flag evaluation wired through the service layer.
+
+## Shipped when `use_auth=yes`
+
+- **[Social login (OAuth / OIDC) with Authlib](https://github.com/mohandoz/fastapi-bedrock/blob/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/recipes/oauth-social-login.md)** — "Sign in with Google" alongside the password flow; the service still mints its own JWT pair, so everything downstream is unchanged.
+- **[Cloudflare Turnstile verification](https://github.com/mohandoz/fastapi-bedrock/blob/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/recipes/turnstile-verification.md)** — a ~40-line dependency that shields unauthenticated endpoints (register, forgot-password) from bot abuse; no-ops until a secret key is configured, so it costs nothing in development.
+- **[Passkeys / WebAuthn readiness](https://github.com/mohandoz/fastapi-bedrock/blob/main/%7B%7Bcookiecutter.project_slug%7D%7D/docs/recipes/passkeys-webauthn.md)** — a credential model alongside the existing `users` table and the registration/authentication flows with `py_webauthn`, ending in the same token issuance the password flow uses.
+
+## Writing your own
+
+Recipes are deliberately *documentation, not flags*: they keep the template's surface small while showing the exact upgrade path. If you build an integration you think belongs here, [contributions are welcome](https://github.com/mohandoz/fastapi-bedrock/blob/main/CONTRIBUTING.md) — a good recipe names real files in the generated project, provides complete copy-pasteable code, and explains the trade-offs at the end.
+
+# Upgrading generated projects with cruft
+
+A cookiecutter template normally helps you once, on day one. [cruft](https://cruft.github.io/cruft/) extends that to the whole life of the project: it records which template commit a project was generated from and can later replay template improvements onto your codebase as a reviewable diff.
+
+## Generate with cruft
+
+```
+uvx cruft create https://github.com/mohandoz/fastapi-bedrock
+```
+
+This behaves exactly like `cookiecutter`, plus it writes a `.cruft.json` at the project root recording the template URL, the answers you gave and the template commit. Commit that file.
+
+Use the full repository URL with cruft; Cookiecutter's `gh:` shorthand is passed directly to Git and treated as an SSH hostname.
+
+## Check and update
+
+```
+uvx cruft check    # exit 1 if the project is behind the template
+uvx cruft diff     # preview what an update would change
+uvx cruft update   # apply upstream template changes as a local diff
+```
+
+`cruft update` re-renders the old and new template revisions with your recorded answers and applies the difference to your working tree. Review it like any other change:
+
+1. Inspect `git diff` — the update touches only files the template owns.
+1. Resolve any `*.rej` files: these are hunks that no longer applied cleanly because you modified the same lines. Apply the intent by hand, then delete the `.rej`.
+1. Run `make check` (Ruff, mypy, tests).
+1. Commit, e.g. `chore: apply fastapi-bedrock template update`.
+
+## Excluding files you have diverged from
+
+If you have rewritten a file and never want template updates to touch it again, add it to the `skip` list in `.cruft.json`:
+
+```
+{
+  "template": "https://github.com/mohandoz/fastapi-bedrock",
+  "skip": ["README.md", "Makefile"]
+}
+```
+
+## Linking an existing project
+
+Projects generated with plain `cookiecutter` have no `.cruft.json`, but you can adopt cruft after the fact:
+
+```
+uvx cruft link https://github.com/mohandoz/fastapi-bedrock
+```
+
+cruft asks for the answers you originally gave and which template commit the project matches; be accurate here or the first `cruft update` diff will be noisy.
+
+## Changing answers later
+
+Answers are recorded in `.cruft.json` under `context.cookiecutter`. To change one (for example flipping `use_observability` on), edit the value and run `uvx cruft update` — the diff then includes everything that flag adds. Flags that *remove* modules work the same way in reverse, though you should verify nothing of yours imports the removed code.
+
+## Release-to-release upgrade notes
+
+Template releases are tagged. The [CHANGELOG and release notes](https://github.com/mohandoz/fastapi-bedrock/releases) describe what changed between tags, and the demo repository (a continuously rendered default configuration) lets you read tag-to-tag diffs of *generated output* — often the quickest way to see what an update will do to your project before running it.
+
+### Initial migration compatibility
+
+Freshly generated projects include an option-aware initial Alembic revision. If an older generated project already has any real file in `migrations/versions/`, do **not** graft the template's `2026-09-01_initial_schema.py` in as a second base revision: keep your existing history and omit that incoming file from the cruft update. Add future model changes as normal forward revisions.
+
+If an older project has no Alembic history but has a database created by local `create_all`, first compare that database with the current SQLModel metadata and establish a reviewed baseline for that existing schema. Applying the new create-table revision directly would fail on the existing tables; stamping an unverified schema would hide drift. New/empty databases can apply the shipped revision normally with `make migrate`.

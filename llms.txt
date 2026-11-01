@@ -1,0 +1,15 @@
+# fastapi-bedrock
+
+> Production-ready FastAPI + Domain-Driven Design cookiecutter template: async SQLModel, JWT auth, Temporal workflows, transactional outbox events, OpenTelemetry — composed feature by feature.
+
+fastapi-bedrock is a Cookiecutter template for production-ready FastAPI services organised as Domain-Driven Design vertical slices. Generated projects ship with async SQLModel/SQLAlchemy 2.0 on PostgreSQL, Alembic migrations, JWT auth with refresh-token rotation, structlog JSON logging, Ruff, strict mypy, pytest with testcontainers, and optional per-flag modules: Docker, GitHub Actions CI, rate limiting, Sentry, Temporal durable workflows, Redis (cache + transactional outbox events), OpenTelemetry observability and a resilient HTTP client. It is not related to Amazon Bedrock.
+
+## Documentation
+
+- [Home](https://mohandoz.github.io/fastapi-bedrock/index.md): What fastapi-bedrock is and why it exists
+- [Quickstart](https://mohandoz.github.io/fastapi-bedrock/quickstart/index.md): Generate and run a project in minutes
+- [Options matrix](https://mohandoz.github.io/fastapi-bedrock/options/index.md): What every cookiecutter option adds to the generated project
+- [Architecture](https://mohandoz.github.io/fastapi-bedrock/architecture/index.md): The DDD vertical-slice layout and request flow
+- [Recipes](https://mohandoz.github.io/fastapi-bedrock/recipes/index.md): Post-generation integration guides shipped with every project
+- [Upgrading with cruft](https://mohandoz.github.io/fastapi-bedrock/upgrading/index.md): Pulling template updates into generated projects with cruft
+
