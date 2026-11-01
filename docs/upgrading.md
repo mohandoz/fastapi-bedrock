@@ -8,12 +8,15 @@ later replay template improvements onto your codebase as a reviewable diff.
 ## Generate with cruft
 
 ```bash
-uvx cruft create gh:mohandoz/fastapi-bedrock
+uvx cruft create https://github.com/mohandoz/fastapi-bedrock
 ```
 
 This behaves exactly like `cookiecutter`, plus it writes a `.cruft.json` at
 the project root recording the template URL, the answers you gave and the
 template commit. Commit that file.
+
+Use the full repository URL with cruft; Cookiecutter's `gh:` shorthand is
+passed directly to Git and treated as an SSH hostname.
 
 ## Check and update
 
@@ -52,7 +55,7 @@ Projects generated with plain `cookiecutter` have no `.cruft.json`, but you
 can adopt cruft after the fact:
 
 ```bash
-uvx cruft link gh:mohandoz/fastapi-bedrock
+uvx cruft link https://github.com/mohandoz/fastapi-bedrock
 ```
 
 cruft asks for the answers you originally gave and which template commit the

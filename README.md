@@ -142,7 +142,7 @@ layer stays swappable.
 
 ```bash
 # recommended: cruft, so generated projects can pull template updates later
-uvx cruft create gh:mohandoz/fastapi-bedrock
+uvx cruft create https://github.com/mohandoz/fastapi-bedrock
 
 # plain cookiecutter works too (no update tracking)
 uvx cookiecutter gh:mohandoz/fastapi-bedrock

@@ -11,7 +11,6 @@ from collections.abc import AsyncIterator
 
 import redis.asyncio as redis
 import structlog
-from redis.exceptions import LockError
 
 logger = structlog.get_logger(__name__)
 
@@ -46,7 +45,7 @@ async def distributed_lock(
             try:
                 await lock.release()
                 logger.debug("lock.released", name=name)
-            except (LockError, redis.RedisError):
+            except redis.RedisError:
                 # Ownership loss and release-time outages are non-fatal: the
                 # bounded lease expires on its own. Raising here would turn a
                 # completed protected operation into a false failure/retry.

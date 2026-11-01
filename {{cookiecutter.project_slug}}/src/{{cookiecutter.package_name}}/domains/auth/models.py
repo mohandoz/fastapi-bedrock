@@ -49,10 +49,9 @@ class RefreshToken(SQLModel, table=True):
     jti: str = Field(primary_key=True, max_length=32)
     family: str = Field(index=True, max_length=32)
     user_id: uuid.UUID = Field(foreign_key="users.id", ondelete="CASCADE", index=True)
-    # sa_type accepts a type instance at runtime; the SQLModel stub types it as a class.
-    expires_at: datetime = Field(sa_type=DateTime(timezone=True))  # type: ignore[call-overload]
+    expires_at: datetime = Field(sa_type=DateTime(timezone=True))
     revoked_at: datetime | None = Field(
         default=None,
-        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+        sa_type=DateTime(timezone=True),
     )
 {%- endif %}

@@ -151,7 +151,8 @@ class Settings(BaseSettings):
     redis_stream: str = Field(default="{{ cookiecutter.package_name }}:events", min_length=1)
     redis_consumer_group: str = Field(default="{{ cookiecutter.package_name }}-workers", min_length=1)
     redis_dead_letter_stream: str = Field(
-        default="{{ cookiecutter.package_name }}:events:dead-letter", min_length=1
+        default="{{ cookiecutter.package_name }}:events:dead-letter",
+        min_length=1,
     )
     redis_max_delivery_attempts: int = Field(default=5, ge=1)
     # Approximate hard cap on stream length (XADD MAXLEN ~). The consumer trims
