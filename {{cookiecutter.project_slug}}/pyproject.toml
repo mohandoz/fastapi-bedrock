@@ -13,7 +13,8 @@ dependencies = [
     # Explicit floor: Starlette < 1.0.1 is vulnerable to BadHost
     # (CVE-2026-48710), a Host-header auth bypass with no 0.x backport.
     "starlette>=1.0.1",
-    "sqlmodel>=0.0.22",
+    # 0.0.43 fixes Field's typing for SQLAlchemy type instances (e.g. DateTime).
+    "sqlmodel>=0.0.43",
     "greenlet>=3.1",
     "pydantic-settings>=2.5",
     # 2.12 is the first release with Python 3.14 support. Pydantic v3 is

@@ -24,6 +24,6 @@ class OutboxEvent(UUIDMixin, TimestampMixin, table=True):
     payload: dict[str, Any] = Field(sa_type=JSONB)
     published_at: datetime | None = Field(
         default=None,
-        sa_type=DateTime(timezone=True),  # type: ignore[call-overload]
+        sa_type=DateTime(timezone=True),
         sa_column_kwargs={"nullable": True, "index": True},
     )

@@ -30,7 +30,7 @@ body:
         the prompts. This is the single most useful field.
       render: shell
       placeholder: |
-        uvx cruft create gh:mohandoz/fastapi-bedrock
+        uvx cruft create https://github.com/mohandoz/fastapi-bedrock
         # answers: python_version=3.13, use_auth=yes, use_redis=yes, everything else default
     validations:
       required: true

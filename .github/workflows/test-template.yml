@@ -55,6 +55,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
+          # No root pyproject.toml exists for setup-uv to detect this range.
+          # Keep aligned with the generated project's [tool.uv].
+          version: ">=0.11,<0.13"
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-suffix: ${{ matrix.variant }}
@@ -85,6 +88,19 @@ jobs:
       - name: Compile all sources
         working-directory: bake/fastapi-ddd-service
         run: uv run python -m compileall -q src tests
+
+      # Short names can make Ruff collapse calls that stay multiline with the
+      # default package name.
+      - name: Check short package name
+        if: matrix.variant == 'all-on'
+        env:
+          SKIP_UV_SYNC: "1"
+        run: |
+          uvx cookiecutter . --no-input --output-dir short-bake \
+            project_name=printful python_version=${{ matrix.python-version }} ${{ matrix.overrides }}
+          uv run --project bake/fastapi-ddd-service ruff check short-bake/printful
+          uv run --project bake/fastapi-ddd-service ruff format --check short-bake/printful
+          uv run --project bake/fastapi-ddd-service python -m compileall -q short-bake/printful/src short-bake/printful/tests
 
       - name: Type check
         working-directory: bake/fastapi-ddd-service

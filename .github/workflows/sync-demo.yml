@@ -66,6 +66,8 @@ jobs:
         if: steps.gate.outputs.enabled == 'true'
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
+          # Keep aligned with the generated project's [tool.uv].
+          version: ">=0.11,<0.13"
           python-version: "3.13"
 
       - name: Configure git identity
