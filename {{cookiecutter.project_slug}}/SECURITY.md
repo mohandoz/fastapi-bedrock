@@ -22,7 +22,8 @@ a fix and disclosure with you.
   both do this) and pydantic-settings picks it up natively via `secrets_dir`
   in `core/config.py` — no code changes per secret.
 {%- if cookiecutter.use_docker == "yes" %}
-- `deploy/k8s/secret.yaml` shows the pattern. In production, sync that Secret
+- `deploy/k8s/common/secret.yaml` shows the pattern and is deliberately excluded
+  from Kustomize. In production, sync that Secret
   from your secret manager with [External Secrets Operator](https://external-secrets.io)
   or the Secrets Store CSI driver instead of applying secrets by hand.
 {%- endif %}
@@ -121,7 +122,7 @@ Configuration that is unsafe outside local development already fails at boot
       probes the service locally.
 {%- endif %}
 - [ ] Migrations run from a single one-shot step per release{% if cookiecutter.use_docker == "yes" %}
-      (`deploy/k8s/migration-job.yaml`){% endif %}, never in app entrypoints.
+      (`deploy/k8s/migration/migration-job.yaml`){% endif %}, never in app entrypoints.
 - [ ] Secrets are file-mounted and sourced from a secret manager, not
       committed manifests or plain env vars.
 - [ ] Database backups are scheduled and a restore has been rehearsed.

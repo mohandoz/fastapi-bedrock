@@ -9,6 +9,7 @@ spec:
   type: ClusterIP
   selector:
     app.kubernetes.io/name: {{ cookiecutter.project_slug }}
+    app.kubernetes.io/component: api
   ports:
     - name: http
       port: 80

@@ -23,6 +23,28 @@ DOMAINS_DIR = ROOT / "src" / PACKAGE / "domains"
 TESTS_DIR = ROOT / "tests"
 
 NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+MAX_NAME_LENGTH = 54
+RESERVED_NAMES = {
+    "api",
+    "auth",
+    "cli",
+    "config",
+    "core",
+    "errors",
+    "events",
+    "health",
+    "http",
+    "idempotency",
+    "llm",
+    "llm_evals",
+    "llms_txt",
+    "mcp",
+    "migrations",
+    "middleware",
+    "redis",
+    "settings",
+    "temporal",
+}
 
 INIT_TEMPLATE = Template('"""The $name domain."""\n')
 
@@ -38,9 +60,19 @@ from $package.core.models import TimestampMixin, UUIDMixin
 class ${entity}Base(SQLModel):
     """Fields shared by the table model and the write schemas."""
 
-    name: str = Field(index=True, min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=2000)
-    is_active: bool = Field(default=True)
+    name: str = Field(
+        index=True,
+        min_length=1,
+        max_length=255,
+        description="Display name.",
+        schema_extra={"examples": ["Example $name"]},
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Optional free-text description.",
+    )
+    is_active: bool = Field(default=True, description="Whether this record is active.")
 
 
 class $entity(${entity}Base, UUIDMixin, TimestampMixin, table=True):
@@ -71,9 +103,18 @@ class ${entity}Update(SQLModel):
     values the create path would reject (or the database would refuse).
     """
 
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    description: str | None = Field(default=None, max_length=2000)
-    is_active: bool | None = None
+    name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=255,
+        description="Replacement display name.",
+    )
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+        description="Replacement description; null clears it.",
+    )
+    is_active: bool | None = Field(default=None, description="Replacement active state.")
 
     @field_validator("name", "is_active")
     @classmethod
@@ -171,6 +212,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 
 from $package.core.database import SessionDep
+{%- if cookiecutter.use_redis == "yes" %}
+from $package.core.idempotency import IdempotentAPIRoute, idempotent
+{%- endif %}
 from $package.core.schemas import Page
 {%- if cookiecutter.use_auth == "yes" %}
 from $package.domains.auth.dependencies import get_current_active_user
@@ -197,39 +241,72 @@ router = APIRouter(
 {%- if cookiecutter.use_auth == "yes" %}
     dependencies=[Depends(get_current_active_user)],
 {%- endif %}
+{%- if cookiecutter.use_redis == "yes" %}
+    route_class=IdempotentAPIRoute,
+{%- endif %}
 )
 
 
-@router.get("", response_model=Page[${entity}Read])
+@router.get(
+    "",
+    response_model=Page[${entity}Read],
+    summary="List ${name}s",
+    response_description="One page of ${name}s plus the total count.",
+)
 async def list_${name}s(
     service: ServiceDep,
     offset: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> Page[$entity]:
+    """List ${name}s in stable primary-key order."""
     return await service.list(offset=offset, limit=limit)
 
 
-@router.post("", response_model=${entity}Read, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=${entity}Read,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a $name",
+)
+{%- if cookiecutter.use_redis == "yes" %}
+@idempotent
+{%- endif %}
 async def create_${name}(data: ${entity}Create, service: ServiceDep) -> $entity:
+    """Create and return a stored $name."""
     return await service.create(data)
 
 
-@router.get("/{entity_id}", response_model=${entity}Read)
+@router.get(
+    "/{entity_id}",
+    response_model=${entity}Read,
+    summary="Get a $name by id",
+)
 async def get_${name}(entity_id: UUID, service: ServiceDep) -> $entity:
+    """Fetch one $name or respond with 404."""
     return await service.get(entity_id)
 
 
-@router.patch("/{entity_id}", response_model=${entity}Read)
+@router.patch(
+    "/{entity_id}",
+    response_model=${entity}Read,
+    summary="Update a $name",
+)
 async def update_${name}(
     entity_id: UUID,
     data: ${entity}Update,
     service: ServiceDep,
 ) -> $entity:
+    """Apply a partial update to a $name."""
     return await service.update(entity_id, data)
 
 
-@router.delete("/{entity_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{entity_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a $name",
+)
 async def delete_${name}(entity_id: UUID, service: ServiceDep) -> None:
+    """Permanently delete a $name or respond with 404."""
     await service.delete(entity_id)
 ''')
 
@@ -321,8 +398,12 @@ def validate(name: str) -> str | None:
     """Return an error message when ``name`` cannot become a domain, else ``None``."""
     if NAME_RE.match(name) is None:
         return f"invalid name {name!r}: use lowercase snake_case, e.g. 'order' or 'order_line'"
-    if keyword.iskeyword(name):
+    if len(name) > MAX_NAME_LENGTH:
+        return f"invalid name {name!r}: use at most {MAX_NAME_LENGTH} characters"
+    if keyword.iskeyword(name) or keyword.issoftkeyword(name):
         return f"invalid name {name!r}: it is a Python keyword"
+    if name in RESERVED_NAMES:
+        return f"invalid name {name!r}: it is reserved by the generated project"
     if (DOMAINS_DIR / name).exists():
         return f"domain {name!r} already exists under src/{PACKAGE}/domains/"
     if (TESTS_DIR / f"test_{name}.py").exists():

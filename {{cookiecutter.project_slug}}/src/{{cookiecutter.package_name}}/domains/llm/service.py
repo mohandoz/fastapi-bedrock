@@ -36,7 +36,7 @@ logger = structlog.get_logger(__name__)
 # system prompt is the first segment of the prompt-cache prefix, so an
 # interpolated timestamp or per-request value here would defeat caching.
 DEFAULT_SYSTEM_PROMPT = (
-    "You are a careful assistant embedded in the {{ cookiecutter.project_name }} API. "
+    f"You are a careful assistant embedded in the {settings.project_name} API. "
     "Answer accurately and concisely; say so plainly when you are unsure."
 )
 
@@ -70,6 +70,15 @@ def get_anthropic_client() -> AsyncAnthropic:
         timeout=settings.llm_timeout,
         max_retries=settings.llm_max_retries,
     )
+
+
+async def close_anthropic_client() -> None:
+    """Close the cached SDK transport if an LLM request created it."""
+    if get_anthropic_client.cache_info().currsize == 0:
+        return
+    client = get_anthropic_client()
+    get_anthropic_client.cache_clear()
+    await client.close()
 
 
 def _map_upstream(exc: anthropic.APIConnectionError | anthropic.APIStatusError) -> LLMUpstreamError:

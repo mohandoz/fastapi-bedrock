@@ -63,9 +63,7 @@ def test_seed_runs_seed_script(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     assert calls == [[sys.executable, str(Path("scripts", "seed.py")), "--count", "5"]]
 
 
-def test_seed_fails_outside_project_root(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_seed_fails_outside_project_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(cli.app, ["seed"])
     assert result.exit_code == 1

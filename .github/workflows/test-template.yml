@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13", "3.14"]
+        python-version: ["3.12", "3.13", "3.14"]
         variant: [all-on, all-off, mixed]
         include:
           - variant: all-on
@@ -30,7 +30,6 @@ jobs:
               use_rate_limiting=yes use_sentry=yes use_temporal=yes
               use_redis=yes use_observability=yes use_http_client=yes
               use_mcp=yes use_llm_example=yes
-            run-tests: true
           - variant: all-off
             overrides: >-
               use_auth=no use_docker=no use_github_actions=no
@@ -45,16 +44,16 @@ jobs:
               use_mcp=no use_llm_example=no
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@v2
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
@@ -62,7 +61,9 @@ jobs:
           cache-dependency-glob: "**/pyproject.toml"
 
       - name: Generate project
-        run: uvx cookiecutter . --no-input --output-dir bake ${{ matrix.overrides }}
+        run: >-
+          uvx cookiecutter . --no-input --output-dir bake
+          python_version=${{ matrix.python-version }} ${{ matrix.overrides }}
 
       - name: Check for unrendered Jinja
         run: |
@@ -85,6 +86,10 @@ jobs:
         working-directory: bake/fastapi-ddd-service
         run: uv run python -m compileall -q src tests
 
+      - name: Type check
+        working-directory: bake/fastapi-ddd-service
+        run: uv run mypy src tests
+
       - name: Import application
         working-directory: bake/fastapi-ddd-service
         run: uv run python -c "import fastapi_ddd_service.main"
@@ -93,9 +98,21 @@ jobs:
       # Docker daemon (conftest.py has no external-service URL fallback, so
       # GitHub `services:` containers would never be used).
       - name: Run test suite
-        if: ${{ matrix.run-tests }}
         working-directory: bake/fastapi-ddd-service
         run: uv run pytest -x
+
+      - name: Validate deployment manifests
+        if: ${{ hashFiles('bake/fastapi-ddd-service/docker-compose.yml') != '' }}
+        working-directory: bake/fastapi-ddd-service
+        run: |
+          docker compose config --quiet
+          kubectl kustomize deploy/k8s >/dev/null
+          kubectl kustomize deploy/k8s/migration >/dev/null
+
+      - name: Build Docker image
+        if: ${{ hashFiles('bake/fastapi-ddd-service/Dockerfile') != '' }}
+        working-directory: bake/fastapi-ddd-service
+        run: docker build --tag template-ci-image .
 
   reject-invalid-input:
     name: Pre-gen hook rejects invalid input
@@ -103,22 +120,22 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@v2
+        uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c # v2
         with:
           egress-policy: audit
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           python-version: "3.13"
 
       - name: Lint generation hooks
         run: |
-          uvx ruff check --isolated hooks
+          uvx ruff==0.16.5 check --isolated --ignore PLR0133 hooks
           python3 -m compileall -q hooks
 
       - name: Invalid inputs must fail generation
@@ -129,10 +146,22 @@ jobs:
             "first_entity=class"
             "first_entity=auth"
             "first_entity=mcp"
+            "first_entity=health"
+            "first_entity=cli"
+            "first_entity=llms_txt"
+            "first_entity=migrations"
             "first_entity=Item"
             "python_version=3.11"
             "python_version=3.13.1"
             "python_version=3.14t"
+            "python_version=3.15"
+            "project_slug=../escape"
+            "project_slug=trailing-"
+            "project_slug=abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv"
+            "version=not-a-version"
+            "version=1.2.3+local"
+            "author_email=not-an-email"
+            "use_redis=maybe"
           )
           for case in "${cases[@]}"; do
             if uvx cookiecutter . --no-input --output-dir reject "$case"; then
@@ -141,3 +170,13 @@ jobs:
             fi
             echo "rejected as expected: $case"
           done
+
+      - name: Quoted metadata must render safely
+        env:
+          SKIP_UV_SYNC: "1"
+        run: |
+          uvx cookiecutter . --no-input --output-dir quoted \
+            'project_description=A "quoted" API' \
+            'author_name=Jane "JJ" Doe'
+          python3 -m compileall -q quoted/fastapi-ddd-service/src
+          python3 -c "import tomllib; tomllib.load(open('quoted/fastapi-ddd-service/pyproject.toml', 'rb'))"

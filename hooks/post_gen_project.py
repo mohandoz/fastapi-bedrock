@@ -6,6 +6,7 @@ Prunes files for disabled features, initialises a fresh git repository and
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -13,7 +14,7 @@ import sys
 from pathlib import Path
 
 PROJECT_DIR = Path.cwd()
-PACKAGE = "{{ cookiecutter.package_name }}"
+PACKAGE = json.loads(r'''{{ cookiecutter.package_name | tojson }}''')
 SRC = Path("src") / PACKAGE
 
 USE_AUTH = "{{ cookiecutter.use_auth }}" == "yes"
@@ -44,6 +45,11 @@ def run(*command: str) -> bool:
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
+
+
+def fail(message: str) -> None:
+    print(f"ERROR: {message}", file=sys.stderr)
+    raise SystemExit(1)
 
 
 def prune_disabled_features() -> None:
@@ -79,7 +85,12 @@ def prune_disabled_features() -> None:
     if not USE_SENTRY:
         remove(SRC / "core" / "sentry.py")
     if not USE_TEMPORAL:
-        remove(SRC / "temporal", "tests/test_temporal.py", "dynamicconfig")
+        remove(
+            SRC / "temporal",
+            "tests/test_temporal.py",
+            "dynamicconfig",
+            "deploy/k8s/temporal-worker.yaml",
+        )
     if not USE_REDIS:
         remove(
             SRC / "core" / "redis.py",
@@ -89,6 +100,7 @@ def prune_disabled_features() -> None:
             SRC / "events",
             "tests/test_redis.py",
             "tests/test_idempotency.py",
+            "deploy/k8s/events-worker.yaml",
         )
     if not USE_OBSERVABILITY:
         remove(SRC / "core" / "observability.py")
@@ -127,45 +139,61 @@ def warn_missing_lockfile(reason: str) -> None:
     )
 
 
-def sync_dependencies() -> None:
+def sync_dependencies() -> bool:
     if os.environ.get("SKIP_UV_SYNC") == "1":
         warn_missing_lockfile("SKIP_UV_SYNC=1 skipped dependency installation")
-        return
+        return False
     if shutil.which("uv") is None:
         warn_missing_lockfile(
             "uv is not on PATH (install it from https://docs.astral.sh/uv/)"
         )
-        return
+        return False
     print("Installing dependencies with 'uv sync' (this may take a moment)...")
     if not run("uv", "sync"):
-        return
-    # Normalise imports/formatting so the first commit is lint-clean.
-    run("uv", "run", "ruff", "check", "--fix", "--quiet", ".")
-    run("uv", "run", "ruff", "format", "--quiet", ".")
-    run("uv", "run", "pre-commit", "install")
+        warn_missing_lockfile("uv sync failed")
+        return False
+    # Generated output must already be clean. Never mutate it here: doing so
+    # hides broken Jinja branches from SKIP_UV_SYNC users and template CI.
+    if not run("uv", "run", "ruff", "check", "--quiet", "."):
+        fail("generated project failed Ruff lint; report this as a template bug")
+    if not run("uv", "run", "ruff", "format", "--check", "--quiet", "."):
+        fail("generated project is not Ruff-formatted; report this as a template bug")
+    if not run("uv", "run", "pre-commit", "install"):
+        print("WARNING: pre-commit hook installation failed; run 'make install' later.", file=sys.stderr)
+    return True
 
 
 def initial_commit() -> None:
-    run("git", "add", "-A")
+    if not run("git", "add", "-A"):
+        fail("could not stage the generated project for its initial commit")
     # --no-verify: bootstrapping the pre-commit hook environments needs network
-    # access and the tree was already ruff-fixed/formatted by sync_dependencies(),
+    # access and the tree was already lint/format-checked by sync_dependencies(),
     # so running the hooks here only makes generation slow and flaky. The hooks
     # installed above still guard every later commit.
     # Non-fatal: if git has no configured identity the files simply stay staged.
-    run(
+    committed = run(
         "git",
+        "-c",
+        "commit.gpgsign=false",
         "commit",
         "-q",
         "--no-verify",
         "-m",
         "Initial commit from fastapi-bedrock",
     )
+    if not committed:
+        print(
+            "WARNING: initial Git commit failed (check user.name/user.email); "
+            "the generated files remain staged.",
+            file=sys.stderr,
+        )
 
 
 def main() -> None:
     prune_disabled_features()
     strip_bytecode_caches()
-    run("git", "init", "-q", "-b", "main")
+    if not run("git", "init", "-q", "-b", "main"):
+        fail("could not initialise the generated Git repository")
     sync_dependencies()
     initial_commit()
     print(

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import Mock
 
 import jwt
 import pytest
@@ -16,8 +18,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from {{ cookiecutter.package_name }}.core import email as email_module
 from {{ cookiecutter.package_name }}.core.config import settings
-from {{ cookiecutter.package_name }}.core.email import EmailMessage
+from {{ cookiecutter.package_name }}.core.email import ConsoleEmailBackend, EmailMessage
 from {{ cookiecutter.package_name }}.core.exceptions import ForbiddenError
 from {{ cookiecutter.package_name }}.core.security import create_email_token, decode_token
 from {{ cookiecutter.package_name }}.domains.auth import bootstrap
@@ -38,6 +41,11 @@ class CapturingEmailBackend:
         self.messages.append(message)
 
 
+class FailingEmailBackend:
+    async def send(self, message: EmailMessage) -> None:
+        raise OSError("SMTP unavailable")
+
+
 @pytest.fixture
 def outbox(monkeypatch: pytest.MonkeyPatch) -> CapturingEmailBackend:
     """Capture outbound email for the duration of a test."""
@@ -50,6 +58,24 @@ def _token_from(message: EmailMessage) -> str:
     match = re.search(r"token=([A-Za-z0-9_\-.]+)", message.text)
     assert match is not None, "email does not contain a token link"
     return match.group(1)
+
+
+async def test_console_email_redacts_token_body_outside_local(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = Mock()
+    monkeypatch.setattr(email_module, "logger", logger)
+    monkeypatch.setattr(settings, "environment", "production")
+    await ConsoleEmailBackend().send(
+        EmailMessage(
+            to="user@example.com",
+            subject="Password reset",
+            text="https://example.com/reset?token=live-secret",
+            html="<a>live-secret</a>",
+        )
+    )
+    logger.warning.assert_called_once()
+    assert "body" not in logger.warning.call_args.kwargs
 
 
 async def _register_and_login(client: AsyncClient, email: str, secret: str) -> dict[str, str]:
@@ -69,6 +95,7 @@ def _make_token(token_type: str, *, expires_in: int = 300, **overrides: Any) -> 
         "exp": now + timedelta(seconds=expires_in),
         "jti": uuid.uuid4().hex,
         "type": token_type,
+        "ver": 0,
     }
     payload.update(overrides)
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
@@ -166,6 +193,11 @@ async def test_forgot_password_then_reset(
         f"{API}/auth/register",
         json={"email": "grace@example.com", "password": "supersecret123"},
     )
+    old_session = await client.post(
+        f"{API}/auth/login",
+        data={"username": "grace@example.com", "password": "supersecret123"},
+    )
+    old_tokens = old_session.json()
     response = await client.post(f"{API}/auth/forgot-password", json={"email": "grace@example.com"})
     assert response.status_code == 202
     assert len(outbox.messages) == 1
@@ -177,6 +209,24 @@ async def test_forgot_password_then_reset(
         json={"token": token, "new_password": "newsecret12345"},
     )
     assert reset.status_code == 200
+
+    replay = await client.post(
+        f"{API}/auth/reset-password",
+        json={"token": token, "new_password": "attacker-chosen-password"},
+    )
+    assert replay.status_code == 401
+    assert (
+        await client.get(
+            f"{API}/auth/me",
+            headers={"Authorization": f"Bearer {old_tokens['access_token']}"},
+        )
+    ).status_code == 401
+    assert (
+        await client.post(
+            f"{API}/auth/refresh",
+            json={"refresh_token": old_tokens["refresh_token"]},
+        )
+    ).status_code == 401
 
     old = await client.post(
         f"{API}/auth/login",
@@ -256,6 +306,57 @@ async def test_register_skips_verification_email_when_not_required(
         json={"email": "liam@example.com", "password": "supersecret123"},
     )
     assert response.status_code == 201
+    assert outbox.messages == []
+
+
+async def test_verification_email_failure_does_not_rollback_registration(
+    client: AsyncClient,
+    session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    monkeypatch.setattr(auth_service, "get_email_backend", FailingEmailBackend)
+
+    response = await client.post(
+        f"{API}/auth/register",
+        json={"email": "delivery-failure@example.com", "password": "supersecret123"},
+    )
+
+    assert response.status_code == 201
+    assert (await _get_user(session, "delivery-failure@example.com")).email == (
+        "delivery-failure@example.com"
+    )
+    login = await client.post(
+        f"{API}/auth/login",
+        data={"username": "delivery-failure@example.com", "password": "supersecret123"},
+    )
+    assert login.status_code == 401  # persisted, but correctly blocked until verified
+
+
+async def test_resend_verification_is_non_enumerating(
+    client: AsyncClient,
+    outbox: CapturingEmailBackend,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "require_email_verification", True)
+    await client.post(
+        f"{API}/auth/register",
+        json={"email": "resend@example.com", "password": "supersecret123"},
+    )
+    outbox.messages.clear()
+
+    known = await client.post(
+        f"{API}/auth/resend-verification", json={"email": "resend@example.com"}
+    )
+    assert known.status_code == 202
+    assert len(outbox.messages) == 1
+
+    outbox.messages.clear()
+    unknown = await client.post(
+        f"{API}/auth/resend-verification", json={"email": "unknown@example.com"}
+    )
+    assert unknown.status_code == 202
+    assert unknown.json() == known.json()
     assert outbox.messages == []
 
 
@@ -375,6 +476,21 @@ async def test_reused_rotated_refresh_token_burns_family(client: AsyncClient) ->
     assert successor.status_code == 401
 
 
+async def test_concurrent_refresh_allows_only_one_rotation(client: AsyncClient) -> None:
+    tokens = await _register_and_login(client, "race@example.com", "supersecret123")
+    first, second = await asyncio.gather(
+        client.post(
+            f"{API}/auth/refresh",
+            json={"refresh_token": tokens["refresh_token"]},
+        ),
+        client.post(
+            f"{API}/auth/refresh",
+            json={"refresh_token": tokens["refresh_token"]},
+        ),
+    )
+    assert sorted((first.status_code, second.status_code)) == [200, 401]
+
+
 # --- Account lifecycle: password change, export, erasure ---------------------
 
 
@@ -395,6 +511,14 @@ async def test_change_password_flow(client: AsyncClient) -> None:
         headers=headers,
     )
     assert ok.status_code == 200
+
+    assert (await client.get(f"{API}/auth/me", headers=headers)).status_code == 401
+    assert (
+        await client.post(
+            f"{API}/auth/refresh",
+            json={"refresh_token": tokens["refresh_token"]},
+        )
+    ).status_code == 401
 
     old = await client.post(
         f"{API}/auth/login",

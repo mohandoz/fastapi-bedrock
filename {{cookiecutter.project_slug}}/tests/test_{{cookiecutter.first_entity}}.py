@@ -6,7 +6,8 @@ from __future__ import annotations
 from httpx import AsyncClient
 
 from {{ cookiecutter.package_name }}.core.config import settings
-from tests.factories import {{ entity_class }}CreateFactory
+
+from .factories import {{ entity_class }}CreateFactory
 
 API = settings.api_v1_prefix
 BASE = f"{API}/{{ cookiecutter.first_entity }}s"
@@ -57,9 +58,7 @@ async def test_delete(client: AsyncClient, auth_headers: dict[str, str]) -> None
     assert missing.status_code == 404
 
 
-async def test_get_unknown_returns_404(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
+async def test_get_unknown_returns_404(client: AsyncClient, auth_headers: dict[str, str]) -> None:
     unknown = "00000000-0000-0000-0000-000000000000"
     response = await client.get(f"{BASE}/{unknown}", headers=auth_headers)
     assert response.status_code == 404

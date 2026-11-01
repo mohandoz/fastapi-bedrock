@@ -91,7 +91,9 @@ def configure_observability(app: FastAPI) -> None:
     # --- Metrics -> Prometheus ---
     meter_provider = MeterProvider(
         resource=resource,
-        metric_readers=[PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=f"{base}/v1/metrics"))],
+        metric_readers=[
+            PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=f"{base}/v1/metrics"))
+        ],
     )
     metrics.set_meter_provider(meter_provider)
 

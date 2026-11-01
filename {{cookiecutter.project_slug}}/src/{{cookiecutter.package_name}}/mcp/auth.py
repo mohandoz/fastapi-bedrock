@@ -6,10 +6,14 @@ against ``/mcp`` with a token obtained from ``POST /api/v1/auth/login``.
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastmcp.server.auth import AccessToken
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 
 from {{ cookiecutter.package_name }}.core.config import settings
+from {{ cookiecutter.package_name }}.core.database import async_session_factory
+from {{ cookiecutter.package_name }}.domains.auth.repository import UserRepository
 
 
 class AccessTokenVerifier(JWTVerifier):
@@ -24,6 +28,21 @@ class AccessTokenVerifier(JWTVerifier):
         access = await super().verify_token(token)
         if access is None or access.claims.get("type") != "access":
             return None
+        subject = access.claims.get("sub")
+        version = access.claims.get("ver")
+        if not isinstance(subject, str) or not isinstance(version, int):
+            return None
+        try:
+            user_id = UUID(subject)
+        except ValueError:
+            return None
+        # Signature validity is insufficient for account authorization: match
+        # the REST dependency by rejecting deleted, inactive and pre-password-
+        # change sessions on every MCP authentication.
+        async with async_session_factory() as session:
+            user = await UserRepository(session).get(user_id)
+            if user is None or not user.is_active or user.auth_version != version:
+                return None
         return access
 
 

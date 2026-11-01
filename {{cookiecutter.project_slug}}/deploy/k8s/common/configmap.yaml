@@ -1,5 +1,4 @@
-# Non-secret runtime configuration, injected as environment variables via
-# `envFrom` in the Deployment and migration Job. Secrets live in secret.yaml.
+# Non-secret runtime configuration shared by the migration, API and workers.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,14 +7,12 @@ metadata:
 data:
   ENVIRONMENT: production
   LOG_LEVEL: INFO
-  # The probes and the image HEALTHCHECK send `Host: localhost`, so keep
-  # `localhost` in this list next to your public hostname.
+  # Keep localhost for image/Kubernetes health probes.
   ALLOWED_HOSTS: api.example.com,localhost
   CORS_ORIGINS: https://app.example.com
-  # uvicorn trusts X-Forwarded-* from these addresses. "*" is fine while the
-  # pod is only reachable through the ingress; narrow it to the ingress
-  # controller's CIDR otherwise.
-  FORWARDED_ALLOW_IPS: "*"
+  # Replace with the ingress controller CIDR. Never expose a pod directly while
+  # this remains "*", or clients can spoof forwarding headers and rate-limit IPs.
+  FORWARDED_ALLOW_IPS: "10.0.0.0/8"
 {%- if cookiecutter.use_temporal == "yes" %}
   TEMPORAL_HOST: temporal-frontend.temporal:7233
   TEMPORAL_NAMESPACE: default

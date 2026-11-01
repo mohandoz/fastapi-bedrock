@@ -55,6 +55,10 @@ class EmailVerificationRequest(SQLModel):
     token: str
 
 
+class EmailVerificationResendRequest(SQLModel):
+    email: EmailStr
+
+
 class UserExport(SQLModel):
     """Everything the service stores about an account (GDPR data portability)."""
 

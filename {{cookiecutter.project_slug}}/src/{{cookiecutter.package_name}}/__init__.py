@@ -1,3 +1,3 @@
-"""{{ cookiecutter.project_name }}."""
+"""Generated service package."""
 
-__version__ = "{{ cookiecutter.version }}"
+__version__ = {{ cookiecutter.version | tojson }}

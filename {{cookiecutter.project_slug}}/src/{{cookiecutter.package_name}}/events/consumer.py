@@ -41,16 +41,60 @@ async def handle_event(event_type: str, payload: dict[str, Any], *, event_id: st
     Dispatch to your domain services here, opening a DB session like a Temporal
     activity does.
     """
-    logger.info("event.handle", event_type=event_type, event_id=event_id, payload=payload)
+    # Event values often contain customer data or credentials. Keep the useful
+    # routing metadata without copying arbitrary payloads into shared logs.
+    logger.info(
+        "event.handle",
+        event_type=event_type,
+        event_id=event_id,
+        payload_fields=sorted(payload),
+    )
 
 
-async def _dispatch(client: redis.Redis, message_id: str, fields: dict[str, str]) -> None:
+async def _dispatch(client: redis.Redis, message_id: str, fields: dict[str, str]) -> bool:
     try:
         await handle_event(fields["type"], json.loads(fields["data"]), event_id=fields["id"])
     except Exception:
         logger.exception("event.handle_failed", message_id=message_id)
-        return  # leave it pending in the PEL for XAUTOCLAIM to retry — do NOT ack
+        return False  # leave it pending in the PEL for XAUTOCLAIM to retry
     await client.xack(settings.redis_stream, settings.redis_consumer_group, message_id)
+    return True
+
+
+async def _dead_letter_if_exhausted(
+    client: redis.Redis,
+    message_id: str,
+    fields: dict[str, str],
+) -> None:
+    pending = cast(
+        "Any",
+        await client.xpending_range(
+            settings.redis_stream,
+            settings.redis_consumer_group,
+            min=message_id,
+            max=message_id,
+            count=1,
+        ),
+    )
+    if not pending or pending[0]["times_delivered"] < settings.redis_max_delivery_attempts:
+        return
+    # One Redis transaction owns both state changes. A crash or connection loss
+    # can therefore never publish a DLQ copy while leaving the source pending
+    # (which would publish another copy on the next reclaim).
+    async with client.pipeline(transaction=True) as pipe:
+        pipe.xadd(
+            settings.redis_dead_letter_stream,
+            cast("Any", {**fields, "original_message_id": message_id}),
+            maxlen=settings.redis_stream_maxlen,
+            approximate=True,
+        )
+        pipe.xack(settings.redis_stream, settings.redis_consumer_group, message_id)
+        await pipe.execute()
+    logger.error(
+        "event.dead_lettered",
+        message_id=message_id,
+        deliveries=pending[0]["times_delivered"],
+    )
 
 
 async def reclaim_stale(
@@ -72,7 +116,8 @@ async def reclaim_stale(
             start_id=cursor,
         )
         for message_id, fields in claimed:
-            await _dispatch(client, message_id, fields)
+            if not await _dispatch(client, message_id, fields):
+                await _dead_letter_if_exhausted(client, message_id, fields)
         if cursor == "0-0":
             break
 
@@ -141,7 +186,10 @@ async def consume(
             )
             for _stream, entries in response or []:
                 for message_id, fields in entries:
-                    await _dispatch(client, message_id, fields)
+                    if not await _dispatch(client, message_id, fields):
+                        # Check the first delivery too: a configured maximum of
+                        # one attempt must not invoke the handler a second time.
+                        await _dead_letter_if_exhausted(client, message_id, fields)
         except Exception:
             logger.exception("event.consumer.error", retry_in_s=delay)
             with contextlib.suppress(TimeoutError):

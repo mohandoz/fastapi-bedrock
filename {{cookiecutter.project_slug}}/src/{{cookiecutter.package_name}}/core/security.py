@@ -73,21 +73,28 @@ def _create_token(
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
-def create_access_token(subject: str | uuid.UUID) -> str:
+def create_access_token(subject: str | uuid.UUID, *, version: int = 0) -> str:
     delta = timedelta(minutes=settings.access_token_expire_minutes)
-    return _create_token(str(subject), delta, "access")
+    return _create_token(str(subject), delta, "access", {"ver": version})
 
 
-def create_refresh_token(subject: str | uuid.UUID, *, jti: str, family: str) -> str:
+def create_refresh_token(
+    subject: str | uuid.UUID, *, jti: str, family: str, version: int = 0
+) -> str:
     """Mint a refresh token whose ``jti``/``family`` are tracked by the token store."""
     delta = timedelta(days=settings.refresh_token_expire_days)
-    return _create_token(str(subject), delta, "refresh", {"jti": jti, "family": family})
+    return _create_token(
+        str(subject),
+        delta,
+        "refresh",
+        {"jti": jti, "family": family, "ver": version},
+    )
 
 
-def create_email_token(subject: str | uuid.UUID, token_type: str) -> str:
+def create_email_token(subject: str | uuid.UUID, token_type: str, *, version: int = 0) -> str:
     """Mint a short-lived, single-purpose signed token for an email link."""
     delta = timedelta(minutes=settings.email_token_expire_minutes)
-    return _create_token(str(subject), delta, token_type)
+    return _create_token(str(subject), delta, token_type, {"ver": version})
 
 
 # Every claim _create_token mints is mandatory on the way back in: a token
@@ -95,7 +102,7 @@ def create_email_token(subject: str | uuid.UUID, token_type: str) -> str:
 # secret, or pre-hardening) must not verify. `require` checks presence only —
 # exp/iat/aud/iss values are verified by the dedicated options below, and the
 # `type` value is asserted at each call site.
-_REQUIRED_CLAIMS = ["exp", "iat", "sub", "jti", "type", "iss", "aud"]
+_REQUIRED_CLAIMS = ["exp", "iat", "sub", "jti", "type", "iss", "aud", "ver"]
 
 
 def decode_token(token: str) -> dict[str, Any]:

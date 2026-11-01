@@ -93,6 +93,24 @@ def _valid_key(key: str) -> bool:
     return 0 < len(key) <= _MAX_KEY_LENGTH and key.isascii() and key.isprintable()
 
 
+def _fingerprint(request: Request, body: bytes) -> str:
+    """Hash every request component that can change the operation's meaning.
+
+    The bearer credential is part of the operation identity. Only the final
+    digest is stored, never the token itself; two principals therefore cannot
+    replay each other's response by colliding on a key and request body.
+    """
+    digest = hashlib.sha256()
+    digest.update(request.headers.get("authorization", "").encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(request.scope.get("query_string", b""))
+    digest.update(b"\0")
+    digest.update(request.headers.get("content-type", "").encode("utf-8"))
+    digest.update(b"\0")
+    digest.update(body)
+    return digest.hexdigest()
+
+
 def _problem_response(
     request: Request,
     *,
@@ -136,7 +154,7 @@ async def _dispatch(
     # capped receive may raise a 413 here; it propagates to the regular
     # exception handlers with no claim to clean up.
     body = await request.body()
-    fingerprint = hashlib.sha256(body).hexdigest()
+    fingerprint = _fingerprint(request, body)
     # Keys are scoped per method and path: the same key on two endpoints never collides.
     record_key = f"idem:{request.method}:{request.scope['path']}:{key}"
     client: redis.Redis = request.app.state.redis
@@ -193,10 +211,7 @@ async def _claim(
             return _problem_response(
                 request,
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=(
-                    f"This {IDEMPOTENCY_KEY_HEADER} was already used"
-                    " with a different request body."
-                ),
+                detail="This idempotency key was already used with a different request body.",
                 problem_type="urn:problem-type:idempotency-mismatch",
             )
         logger.info("idempotency.replayed", record_key=record_key)
@@ -211,9 +226,7 @@ async def _claim(
     return _problem_response(
         request,
         status_code=status.HTTP_409_CONFLICT,
-        detail=(
-            f"A request with the same {IDEMPOTENCY_KEY_HEADER} is currently being processed."
-        ),
+        detail=(f"A request with the same {IDEMPOTENCY_KEY_HEADER} is currently being processed."),
         problem_type="urn:problem-type:idempotency-in-flight",
     )
 

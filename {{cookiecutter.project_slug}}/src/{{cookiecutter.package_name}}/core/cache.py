@@ -56,7 +56,11 @@ class Cache:
             return None
         try:
             return json.loads(raw)
+{%- if cookiecutter.python_version == "3.14" %}
+        except json.JSONDecodeError, TypeError:
+{%- else %}
         except (json.JSONDecodeError, TypeError):
+{%- endif %}
             logger.warning("cache.decode_error", key=key)
             return None
 
@@ -77,7 +81,11 @@ class Cache:
     async def delete(self, *keys: str) -> int:
         if not keys:
             return 0
-        return int(await self._redis.delete(*(self._key(k) for k in keys)))
+        try:
+            return int(await self._redis.delete(*(self._key(k) for k in keys)))
+        except redis.RedisError:
+            logger.warning("cache.unavailable", keys=list(keys), op="delete")
+            return 0
 
     async def get_or_set(
         self,
